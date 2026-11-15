@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import Link from "next/link";
 import {
   GraduationCap,
@@ -37,8 +37,45 @@ import {
   Navigation,
   RefreshCw,
   Edit,
+  Loader2,
 } from "lucide-react";
 import { signOutAction } from "@/app/auth/actions";
+import {
+  closeSessionAction,
+  extendSessionWindowAction,
+  manualAttendanceOverrideAction,
+  dismissAlertAction,
+} from "@/app/(lecturer)/sessions/actions";
+
+export interface AttendanceRecordItem {
+  id: string;
+  session_id: string;
+  student_id: string;
+  checkin_number: number;
+  status: "verified" | "manual";
+  distance_m: number | null;
+  gps_accuracy_m: number | null;
+  match_score: number | null;
+  liveness_passed: boolean | null;
+  manual_reason: string | null;
+  created_at: string;
+  student_name: string;
+  student_index: string;
+}
+
+export interface AlertRecordItem {
+  id: string;
+  session_id: string;
+  type: string;
+  severity: "high" | "medium" | "low";
+  claimed_index: string | null;
+  student_id: string | null;
+  distance_m: number | null;
+  match_score: number | null;
+  details: unknown;
+  status: "new" | "reviewed" | "dismissed";
+  created_at: string;
+}
 
 interface StudentTelemetry {
   id: string;
@@ -51,6 +88,7 @@ interface StudentTelemetry {
   statusLabel: string;
   avatarUrl?: string;
   initials?: string;
+  studentId?: string;
 }
 
 interface SecurityAlert {
@@ -80,6 +118,8 @@ interface SessionMonitorClientViewProps {
     student_count: number;
     checked_in_count: number;
   };
+  initialAttendance?: AttendanceRecordItem[];
+  initialAlerts?: AlertRecordItem[];
 }
 
 const INITIAL_STUDENTS: StudentTelemetry[] = [
@@ -197,10 +237,15 @@ const INITIAL_ALERTS: SecurityAlert[] = [
 
 export default function SessionMonitorClientView({
   session,
+  initialAttendance = [],
+  initialAlerts = [],
 }: SessionMonitorClientViewProps) {
   const [filter, setFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [sessionStatus, setSessionStatus] = useState<"open" | "closed">(
+    session.status
+  );
   const [activeOverrideStudent, setActiveOverrideStudent] =
     useState<StudentTelemetry | null>(null);
   const [overrideReason, setOverrideReason] = useState(
@@ -209,9 +254,96 @@ export default function SessionMonitorClientView({
   const [overrideNote, setOverrideNote] = useState("");
   const [extensionMinutes, setExtensionMinutes] = useState(11);
   const [notification, setNotification] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+
+  // Map initial live attendance from Supabase if present
+  const liveStudents: StudentTelemetry[] = (initialAttendance ?? []).map(
+    (row) => ({
+      id: row.id,
+      time: new Date(row.created_at).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }),
+      name: row.student_name,
+      indexNumber: row.student_index,
+      distanceM: row.distance_m ?? 0,
+      faceMatchScore: row.match_score ?? 100,
+      status:
+        row.status === "verified" || row.status === "manual"
+          ? "verified"
+          : "low_liveness",
+      statusLabel: row.status === "manual" ? "Manual Override" : "Verified",
+      initials: row.student_name
+        .split(" ")
+        .map((n) => n[0])
+        .join("")
+        .slice(0, 2)
+        .toUpperCase(),
+      studentId: row.student_id,
+    })
+  );
+
+  // Combine live stream with initial cohort members so interface always has roster
+  const allStudents = [
+    ...liveStudents,
+    ...INITIAL_STUDENTS.filter(
+      (init) =>
+        !liveStudents.some((live) => live.indexNumber === init.indexNumber)
+    ),
+  ];
+
+  // Map live alerts if present, or fallback to INITIAL_ALERTS
+  const [alerts, setAlerts] = useState<SecurityAlert[]>(() => {
+    if (initialAlerts && initialAlerts.length > 0) {
+      return initialAlerts.map((a) => {
+        const detailsObj = a.details as { message?: string } | null;
+        const validTypes: SecurityAlert["type"][] = [
+          "fake_identity",
+          "out_of_bounds",
+          "multi_index",
+          "resolved",
+        ];
+        const alertType: SecurityAlert["type"] = validTypes.includes(
+          a.type as SecurityAlert["type"]
+        )
+          ? (a.type as SecurityAlert["type"])
+          : "out_of_bounds";
+
+        const validSeverities: SecurityAlert["severity"][] = [
+          "high",
+          "medium",
+          "critical",
+          "resolved",
+        ];
+        const severity: SecurityAlert["severity"] = validSeverities.includes(
+          a.severity as SecurityAlert["severity"]
+        )
+          ? (a.severity as SecurityAlert["severity"])
+          : "medium";
+
+        return {
+          id: a.id,
+          type: alertType,
+          title: a.type.replace(/_/g, " "),
+          severity,
+          description:
+            detailsObj?.message ||
+            `Alert flagged for index ${a.claimed_index || "unknown"}`,
+          studentName: a.claimed_index ? `Index ${a.claimed_index}` : undefined,
+          studentIndex: a.claimed_index || undefined,
+          timestamp: new Date(a.created_at).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        };
+      });
+    }
+    return INITIAL_ALERTS;
+  });
 
   // Filter students
-  const filteredStudents = INITIAL_STUDENTS.filter((st) => {
+  const filteredStudents = allStudents.filter((st) => {
     const matchesSearch =
       st.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       st.indexNumber.includes(searchQuery);
@@ -227,17 +359,65 @@ export default function SessionMonitorClientView({
 
   function handleConfirmOverride() {
     if (!activeOverrideStudent) return;
-    setNotification(
-      `Attendance verified manually for ${activeOverrideStudent.name} (${activeOverrideStudent.indexNumber}).`
+    const formData = new FormData();
+    formData.set("session_id", session.id);
+    formData.set(
+      "student_id",
+      activeOverrideStudent.studentId || activeOverrideStudent.id
     );
-    setActiveOverrideStudent(null);
-    setTimeout(() => setNotification(null), 4000);
+    formData.set("reason", overrideReason);
+    formData.set("note", overrideNote);
+
+    startTransition(async () => {
+      const res = await manualAttendanceOverrideAction(formData);
+      if (res && res.error) {
+        setNotification(`Override error: ${res.error}`);
+      } else {
+        setNotification(
+          `Attendance verified manually for ${activeOverrideStudent.name} (${activeOverrideStudent.indexNumber}).`
+        );
+        setActiveOverrideStudent(null);
+      }
+      setTimeout(() => setNotification(null), 4000);
+    });
   }
 
   function handleGrantExtension() {
-    setExtensionMinutes((prev) => prev + 5);
-    setNotification("Granted +5 minute check-in window extension.");
-    setTimeout(() => setNotification(null), 4000);
+    startTransition(async () => {
+      const res = await extendSessionWindowAction(session.id, 5);
+      if (res && res.error) {
+        setNotification(`Extension error: ${res.error}`);
+      } else {
+        setExtensionMinutes((prev) => prev + 5);
+        setNotification("Granted +5 minute check-in window extension.");
+      }
+      setTimeout(() => setNotification(null), 4000);
+    });
+  }
+
+  function handleEndSession() {
+    if (!confirm("Are you sure you want to end this attendance session early?")) {
+      return;
+    }
+    startTransition(async () => {
+      const res = await closeSessionAction(session.id);
+      if (res && res.error) {
+        setNotification(`Error ending session: ${res.error}`);
+      } else {
+        setSessionStatus("closed");
+        setNotification("Attendance session ended.");
+      }
+      setTimeout(() => setNotification(null), 4000);
+    });
+  }
+
+  function handleDismissAlert(alertId: string) {
+    startTransition(async () => {
+      await dismissAlertAction(alertId, session.id);
+      setAlerts((prev) => prev.filter((a) => a.id !== alertId));
+      setNotification("Security alert dismissed.");
+      setTimeout(() => setNotification(null), 3000);
+    });
   }
 
   return (
@@ -435,13 +615,20 @@ export default function SessionMonitorClientView({
 
               {/* Live badge & Countdown timer pill */}
               <div className="flex items-center gap-2.5">
-                <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 font-label-md text-label-md font-semibold border border-emerald-200 shadow-xs">
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-600"></span>
-                  </span>
-                  <span>LIVE SESSION</span>
-                </div>
+                {sessionStatus === "open" ? (
+                  <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 font-label-md text-label-md font-semibold border border-emerald-200 shadow-xs">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-600"></span>
+                    </span>
+                    <span>LIVE SESSION</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-surface-container text-secondary font-label-md text-label-md font-semibold border border-surface-container-high shadow-xs">
+                    <span className="w-2 h-2 rounded-full bg-secondary"></span>
+                    <span>SESSION CLOSED</span>
+                  </div>
+                )}
                 <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-container-high text-primary font-label-md text-label-md font-bold shadow-inner border border-surface-container-highest">
                   <Clock className="h-4 w-4" />
                   <span>
@@ -491,11 +678,20 @@ export default function SessionMonitorClientView({
                 </Link>
                 <button
                   type="button"
-                  onClick={() => alert("Session closed early.")}
-                  className="h-11 px-4 rounded-xl bg-surface-container-lowest hover:bg-error-container/40 text-error font-label-lg text-label-md font-semibold flex items-center gap-2 transition-all shadow-xs border border-error/20 cursor-pointer"
+                  onClick={handleEndSession}
+                  disabled={isPending || sessionStatus === "closed"}
+                  className="h-11 px-4 rounded-xl bg-surface-container-lowest hover:bg-error-container/40 text-error font-label-lg text-label-md font-semibold flex items-center gap-2 transition-all shadow-xs border border-error/20 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <StopCircle className="h-4 w-4" />
-                  <span>End Session Early</span>
+                  {isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <StopCircle className="h-4 w-4" />
+                  )}
+                  <span>
+                    {sessionStatus === "closed"
+                      ? "Session Closed"
+                      : "End Session Early"}
+                  </span>
                 </button>
               </div>
             </div>
@@ -939,9 +1135,17 @@ export default function SessionMonitorClientView({
                                   <button
                                     type="button"
                                     onClick={handleConfirmOverride}
-                                    className="px-4 py-1.5 rounded-lg bg-primary hover:bg-primary-container text-on-primary font-label-md font-semibold shadow-sm transition-all cursor-pointer"
+                                    disabled={isPending}
+                                    className="px-4 py-1.5 rounded-lg bg-primary hover:bg-primary-container text-on-primary font-label-md font-semibold shadow-sm transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-60"
                                   >
-                                    Confirm Present
+                                    {isPending ? (
+                                      <>
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                        <span>Confirming…</span>
+                                      </>
+                                    ) : (
+                                      <span>Confirm Present</span>
+                                    )}
                                   </button>
                                 </div>
                               </div>
@@ -995,7 +1199,7 @@ export default function SessionMonitorClientView({
 
                   <div className="flex items-center gap-1.5">
                     <span className="px-2.5 py-1 rounded-full bg-error-container text-on-error-container font-label-md text-caption font-bold">
-                      3 Unresolved
+                      {alerts.filter((a) => a.severity !== "resolved").length} Unresolved
                     </span>
                     <button
                       type="button"
@@ -1014,7 +1218,7 @@ export default function SessionMonitorClientView({
 
                 {/* Alert Cards Stack */}
                 <div className="flex flex-col gap-3">
-                  {INITIAL_ALERTS.map((secAlert) => (
+                  {alerts.map((secAlert) => (
                     <div
                       key={secAlert.id}
                       className={`p-4 rounded-xl flex flex-col gap-2 border ${
@@ -1097,8 +1301,9 @@ export default function SessionMonitorClientView({
                           </button>
                           <button
                             type="button"
-                            onClick={() => window.alert("Alert dismissed")}
-                            className="px-3 h-9 rounded-lg bg-surface-container-lowest hover:bg-surface-container text-secondary font-label-md text-label-md font-medium transition-colors border border-surface-container-high cursor-pointer"
+                            onClick={() => handleDismissAlert(secAlert.id)}
+                            disabled={isPending}
+                            className="px-3 h-9 rounded-lg bg-surface-container-lowest hover:bg-surface-container text-secondary font-label-md text-label-md font-medium transition-colors border border-surface-container-high cursor-pointer disabled:opacity-50"
                           >
                             Dismiss
                           </button>
@@ -1154,9 +1359,14 @@ export default function SessionMonitorClientView({
                 <button
                   type="button"
                   onClick={handleGrantExtension}
-                  className="w-full h-11 rounded-xl bg-surface-container-lowest hover:bg-surface-container text-primary font-label-md text-label-md font-bold shadow-xs border border-surface-container-high transition-all flex items-center justify-center gap-2 active:scale-98 cursor-pointer"
+                  disabled={isPending}
+                  className="w-full h-11 rounded-xl bg-surface-container-lowest hover:bg-surface-container text-primary font-label-md text-label-md font-bold shadow-xs border border-surface-container-high transition-all flex items-center justify-center gap-2 active:scale-98 cursor-pointer disabled:opacity-50"
                 >
-                  <PlusCircle className="h-4 w-4" />
+                  {isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <PlusCircle className="h-4 w-4" />
+                  )}
                   <span>Grant +5 Min Check-in Extension</span>
                 </button>
               </div>

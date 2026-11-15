@@ -1,6 +1,10 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getSessionDetailsAction } from "../../actions";
+import {
+  getSessionDetailsAction,
+  getSessionAttendanceAction,
+  getSessionAlertsAction,
+} from "../../actions";
 import SessionMonitorClientView from "@/components/lecturer/session-monitor-client-view";
 
 export const dynamic = "force-dynamic";
@@ -39,7 +43,11 @@ export default async function SessionMonitorPage({
     redirect("/login");
   }
 
-  const session = await getSessionDetailsAction(id);
+  const [session, initialAttendance, initialAlerts] = await Promise.all([
+    getSessionDetailsAction(id),
+    getSessionAttendanceAction(id),
+    getSessionAlertsAction(id),
+  ]);
 
   const sessionData = session
     ? {
@@ -61,5 +69,11 @@ export default async function SessionMonitorPage({
         ...DEMO_MONITOR_SESSION,
       };
 
-  return <SessionMonitorClientView session={sessionData} />;
+  return (
+    <SessionMonitorClientView
+      session={sessionData}
+      initialAttendance={initialAttendance}
+      initialAlerts={initialAlerts}
+    />
+  );
 }

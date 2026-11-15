@@ -150,6 +150,7 @@ export async function closeSessionAction(sessionId: string) {
   if (error) return { error: error.message };
 
   revalidatePath(`/sessions/${sessionId}/qr`);
+  revalidatePath(`/sessions/${sessionId}/monitor`);
   return { success: true };
 }
 
@@ -177,4 +178,164 @@ export async function regenerateTokenAction(sessionId: string) {
 
   revalidatePath(`/sessions/${sessionId}/qr`);
   return { success: true, token: newToken };
+}
+
+export async function getSessionAttendanceAction(sessionId: string) {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return [];
+
+  // Fetch attendance records for this session
+  const { data: attendance, error } = await supabase
+    .from("attendance")
+    .select("*")
+    .eq("session_id", sessionId)
+    .order("created_at", { ascending: false });
+
+  if (error || !attendance) return [];
+
+  // Collect student IDs
+  const studentIds = Array.from(new Set(attendance.map((a) => a.student_id)));
+
+  // Fetch student info
+  let studentsMap = new Map<string, { full_name: string; index_number: string }>();
+  if (studentIds.length > 0) {
+    const { data: students } = await supabase
+      .from("students")
+      .select("id, full_name, index_number")
+      .in("id", studentIds);
+
+    if (students) {
+      studentsMap = new Map(students.map((s) => [s.id, s]));
+    }
+  }
+
+  return attendance.map((a) => {
+    const st = studentsMap.get(a.student_id);
+    return {
+      ...a,
+      student_name: st?.full_name || "Unknown Student",
+      student_index: st?.index_number || "N/A",
+    };
+  });
+}
+
+export async function getSessionAlertsAction(sessionId: string) {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return [];
+
+  const { data: alerts, error } = await supabase
+    .from("alerts")
+    .select("*")
+    .eq("session_id", sessionId)
+    .order("created_at", { ascending: false });
+
+  if (error || !alerts) return [];
+
+  return alerts;
+}
+
+export async function manualAttendanceOverrideAction(formData: FormData) {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return { error: "Unauthorized" };
+
+  const sessionId = formData.get("session_id") as string;
+  const studentId = formData.get("student_id") as string;
+  const reason = formData.get("reason") as string;
+  const note = formData.get("note") as string;
+  const fullReason = note ? `${reason}: ${note}` : reason;
+
+  const { error } = await supabase
+    .from("attendance")
+    .upsert({
+      session_id: sessionId,
+      student_id: studentId,
+      status: "manual",
+      manual_reason: fullReason,
+      match_score: 100,
+      distance_m: 0,
+      checkin_number: 1,
+    });
+
+  if (error) return { error: error.message };
+
+  // If there's an alert for this student in this session, mark reviewed
+  await supabase
+    .from("alerts")
+    .update({ status: "reviewed" })
+    .eq("session_id", sessionId)
+    .eq("student_id", studentId);
+
+  revalidatePath(`/sessions/${sessionId}/monitor`);
+  return { success: true };
+}
+
+export async function extendSessionWindowAction(
+  sessionId: string,
+  additionalMinutes: number = 5
+) {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return { error: "Unauthorized" };
+
+  const { data: session } = await supabase
+    .from("sessions")
+    .select("ends_at")
+    .eq("id", sessionId)
+    .single();
+
+  if (!session) return { error: "Session not found" };
+
+  const currentEnd = new Date(session.ends_at);
+  const newEnd = new Date(
+    currentEnd.getTime() + additionalMinutes * 60 * 1000
+  );
+
+  const { error } = await supabase
+    .from("sessions")
+    .update({ ends_at: newEnd.toISOString() })
+    .eq("id", sessionId);
+
+  if (error) return { error: error.message };
+
+  revalidatePath(`/sessions/${sessionId}/monitor`);
+  return { success: true, newEndsAt: newEnd.toISOString() };
+}
+
+export async function dismissAlertAction(alertId: string, sessionId: string) {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return { error: "Unauthorized" };
+
+  const { error } = await supabase
+    .from("alerts")
+    .update({ status: "dismissed" })
+    .eq("id", alertId);
+
+  if (error) return { error: error.message };
+
+  revalidatePath(`/sessions/${sessionId}/monitor`);
+  return { success: true };
 }
