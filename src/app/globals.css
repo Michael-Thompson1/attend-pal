@@ -1,0 +1,133 @@
+@import "tailwindcss";
+
+/* ─── Attend Pal Design Tokens (Tailwind v4 @theme) ─────────────────────────
+   Source: Stitch project 16824782504686943603 (extracted HTML tokens).
+   Never hard-code these values anywhere in the app — always use the class name
+   or CSS variable (e.g. bg-primary / var(--color-primary)).
+   ─────────────────────────────────────────────────────────────────────────── */
+@theme inline {
+
+  /* ── Colors ── */
+  --color-primary:                   #00288e;
+  --color-primary-container:         #1e40af;
+  --color-on-primary:                #ffffff;
+  --color-on-primary-container:      #a8b8ff;
+
+  --color-secondary:                 #515f74;
+  --color-secondary-container:       #d5e3fc;
+  --color-secondary-fixed:           #d5e3fc;
+
+  --color-surface:                   #f8f9ff;
+  --color-surface-container-lowest:  #ffffff;
+  --color-surface-container-low:     #eff4ff;
+  --color-surface-container:         #e5eeff;
+  --color-surface-container-high:    #dce9ff;
+  --color-surface-container-highest: #d3e4fe;
+  --color-surface-dim:               #cbdbf5;
+
+  --color-on-surface:                #0b1c30;
+  --color-on-surface-variant:        #444653;
+
+  --color-outline:                   #757684;
+  --color-outline-variant:           #c4c5d5;
+
+  --color-error:                     #ba1a1a;
+  --color-error-container:           #ffdad6;
+  --color-on-error-container:        #93000a;
+
+  --color-tertiary:                  #003c36;
+  --color-tertiary-container:        #00554e;
+  --color-on-tertiary:               #ffffff;
+  --color-tertiary-fixed:            #89f5e7;
+  --color-tertiary-fixed-dim:        #6bd8cb;
+
+  --color-on-error:                  #ffffff;
+
+  --color-on-secondary-fixed:         #0d1c2e;
+  --color-on-secondary-fixed-variant: #3a485b;
+  --color-surface-tint:              #3755c3;
+
+  --color-inverse-surface:           #213145;
+  --color-inverse-on-surface:        #eaf1ff;
+
+  --color-primary-fixed:             #dde1ff;
+  --color-primary-fixed-dim:         #b8c4ff;
+
+  /* ── Border radius ── */
+  --radius:                          0.25rem;   /* DEFAULT */
+  --radius-lg:                       0.5rem;
+  --radius-xl:                       0.75rem;
+  --radius-full:                     9999px;
+
+  /* ── Spacing extras ── */
+  --spacing-space-xs:                0.25rem;
+  --spacing-space-sm:                0.5rem;
+  --spacing-space-md:                1rem;
+  --spacing-space-lg:                1.5rem;
+  --spacing-space-xl:                2.5rem;
+  --spacing-margin:                  2rem;
+  --spacing-gutter:                  1.5rem;
+  --spacing-margin-mobile:           1rem;
+  --spacing-gutter-mobile:           1rem;
+
+  /* ── Typography ── */
+  --font-inter: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-sans: var(--font-inter);
+
+  /* Font-size scale (utility classes generated: text-display-lg, text-headline-lg, …) */
+  --text-display-lg:   36px;
+  --leading-display-lg: 44px;
+
+  --text-headline-lg:  32px;
+  --leading-headline-lg: 40px;
+
+  --text-headline-md:  28px;
+  --leading-headline-md: 36px;
+
+  --text-headline-sm:  22px;
+  --leading-headline-sm: 28px;
+
+  --text-title-lg:     18px;
+  --leading-title-lg:  26px;
+
+  --text-title-md:     16px;
+  --leading-title-md:  24px;
+
+  --text-body-lg:      18px;
+  --leading-body-lg:   28px;
+
+  --text-body-md:      16px;
+  --leading-body-md:   24px;
+
+  --text-label-lg:     15px;
+  --leading-label-lg:  20px;
+
+  --text-label-md:     14px;
+  --leading-label-md:  20px;
+
+  --text-caption:      13px;
+  --leading-caption:   18px;
+}
+
+/* ─── Base styles ─────────────────────────────────────────────────────────── */
+html {
+  height: 100%;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  min-height: 100%;
+  background-color: var(--color-surface);
+  color: var(--color-on-surface);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-size: var(--text-body-md);
+  line-height: var(--leading-body-md);
+}
+
+/* ─── Focus ring (accessible) ─────────────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius);
+}
