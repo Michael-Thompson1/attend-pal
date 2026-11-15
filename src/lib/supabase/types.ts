@@ -25,6 +25,7 @@ export interface Database {
           institution_name?: string;
           created_at?: string;
         };
+        Relationships: [];
       };
       lecturers: {
         Row: {
@@ -48,6 +49,7 @@ export interface Database {
           campus?: string | null;
           created_at?: string;
         };
+        Relationships: [];
       };
       lecturer_settings: {
         Row: {
@@ -77,6 +79,7 @@ export interface Database {
           notify_suspicious?: boolean;
           updated_at?: string;
         };
+        Relationships: [];
       };
       classes: {
         Row: {
@@ -109,6 +112,7 @@ export interface Database {
           default_venue?: string | null;
           created_at?: string;
         };
+        Relationships: [];
       };
       students: {
         Row: {
@@ -144,6 +148,7 @@ export interface Database {
           reference_photo_path?: string | null;
           created_at?: string;
         };
+        Relationships: [];
       };
       sessions: {
         Row: {
@@ -206,6 +211,7 @@ export interface Database {
           created_at?: string;
           closed_at?: string | null;
         };
+        Relationships: [];
       };
       attendance: {
         Row: {
@@ -250,6 +256,7 @@ export interface Database {
           manual_reason?: string | null;
           created_at?: string;
         };
+        Relationships: [];
       };
       alerts: {
         Row: {
@@ -318,6 +325,7 @@ export interface Database {
           status?: "new" | "reviewed" | "dismissed";
           created_at?: string;
         };
+        Relationships: [];
       };
       attempts: {
         Row: {
@@ -347,6 +355,7 @@ export interface Database {
           outcome?: string;
           created_at?: string;
         };
+        Relationships: [];
       };
     };
     Views: Record<string, never>;
