@@ -61,10 +61,12 @@ interface SessionQRClientViewProps {
     student_count: number;
     checked_in_count: number;
   };
+  baseUrl?: string;
 }
 
 export default function SessionQRClientView({
   session: initialSession,
+  baseUrl = "https://attendpal.ucc.edu.gh",
 }: SessionQRClientViewProps) {
   const [session, setSession] = useState(initialSession);
   const [copiedLink, setCopiedLink] = useState(false);
@@ -78,11 +80,8 @@ export default function SessionQRClientView({
     ? `AP-${session.token.slice(0, 4).toUpperCase()}-${session.class_code.slice(0, 3)}`
     : `AP-7842-${session.class_code.slice(0, 3)}`;
 
-  // Web link for students
-  const studentWebLink =
-    typeof window !== "undefined"
-      ? `${window.location.origin}/attend?session=${session.id}`
-      : `attendpal.edu.gh/c/${session.class_code.toLowerCase()}-${session.id.slice(0, 6)}`;
+  // Web link for students (derived deterministically from baseUrl to guarantee 0 SSR/client mismatch)
+  const studentWebLink = `${baseUrl}/attend?session=${session.id}`;
 
   async function handleCopyLink() {
     try {
@@ -536,7 +535,7 @@ export default function SessionQRClientView({
                 <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 mt-2 pt-2">
                   <div className="flex items-center gap-1.5 text-secondary font-label-md text-label-md">
                     <Clock className="h-4 w-4 text-primary" />
-                    <span>
+                    <span suppressHydrationWarning>
                       Window: {startTimeStr} – {endTimeStr}
                     </span>
                   </div>
@@ -783,7 +782,7 @@ export default function SessionQRClientView({
                 <div className="w-9 h-9 rounded-lg bg-primary-container text-on-primary flex items-center justify-center mb-1">
                   <Clock className="h-5 w-5" />
                 </div>
-                <h4 className="font-title-md text-label-lg font-semibold text-on-surface">
+                <h4 className="font-title-md text-label-lg font-semibold text-on-surface" suppressHydrationWarning>
                   Check-in closes promptly at {endTimeStr}
                 </h4>
                 <p className="font-caption text-caption text-secondary">

@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { getSessionDetailsAction } from "../../actions";
 import SessionQRClientView from "@/components/lecturer/session-qr-client-view";
@@ -43,6 +44,11 @@ export default async function SessionQRPage({ params }: SessionQRPageProps) {
     redirect("/login");
   }
 
+  const headerList = await headers();
+  const host = headerList.get("host") || "localhost:3000";
+  const protocol = headerList.get("x-forwarded-proto") || "http";
+  const baseUrl = `${protocol}://${host}`;
+
   const session = await getSessionDetailsAction(id);
 
   // If session not found in database (e.g. previewing / testing), provide demo fallback
@@ -51,5 +57,5 @@ export default async function SessionQRPage({ params }: SessionQRPageProps) {
     ...DEMO_FALLBACK_SESSION,
   };
 
-  return <SessionQRClientView session={sessionData} />;
+  return <SessionQRClientView session={sessionData} baseUrl={baseUrl} />;
 }
