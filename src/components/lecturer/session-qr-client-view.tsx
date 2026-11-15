@@ -583,6 +583,7 @@ export default function SessionQRClientView({
                 <div className="flex items-center gap-2">
                   <div className="relative flex-1">
                     <input
+                      suppressHydrationWarning
                       type="text"
                       readOnly
                       value={studentWebLink}
@@ -669,6 +670,7 @@ export default function SessionQRClientView({
 
                 {/* Share on WhatsApp */}
                 <a
+                  suppressHydrationWarning
                   href={`https://api.whatsapp.com/send?text=${encodeURIComponent(
                     `*${session.class_code} Attendance Check-in Active*\nJoin session: ${studentWebLink}\nBackup Code: ${displayCode}`
                   )}`}
