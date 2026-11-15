@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useTransition } from "react";
 import Link from "next/link";
 import {
   LayoutDashboard,
@@ -34,6 +34,11 @@ import {
   X,
   ShieldAlert,
 } from "lucide-react";
+import type {
+  ClassOption,
+  ClassReportData,
+} from "@/app/(lecturer)/reports/actions";
+import { getClassReportDataAction } from "@/app/(lecturer)/reports/actions";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -50,9 +55,21 @@ export interface StudentReportItem {
   statusBadge: "eligible" | "at-risk" | "barred" | "perfect";
 }
 
+interface ReportsClientViewProps {
+  classes?: ClassOption[];
+  initialReportData?: ClassReportData | null;
+}
+
 // ─── Initial Demo Data ──────────────────────────────────────────────────────
 
-const INITIAL_STUDENTS: StudentReportItem[] = [
+const DEMO_CLASSES: ClassOption[] = [
+  { id: "demo-inf212", code: "INF212", title: "Data Structures & Algorithms" },
+  { id: "demo-inf204", code: "INF204", title: "Object Oriented Programming" },
+  { id: "demo-cs311", code: "CS311", title: "Database Systems II" },
+  { id: "demo-mth221", code: "MTH221", title: "Discrete Mathematics" },
+];
+
+const DEMO_STUDENTS: StudentReportItem[] = [
   {
     id: "1",
     indexNumber: "10928371",
@@ -151,15 +168,51 @@ const INITIAL_STUDENTS: StudentReportItem[] = [
   },
 ];
 
-export default function ReportsClientView() {
-  const [students] = useState<StudentReportItem[]>(INITIAL_STUDENTS);
-  const [selectedCourse, setSelectedCourse] = useState("INF212");
+export default function ReportsClientView({
+  classes: initialClasses = [],
+  initialReportData = null,
+}: ReportsClientViewProps) {
+  const isDemo = initialClasses.length === 0 || !initialReportData;
+  const availableClasses = isDemo ? DEMO_CLASSES : initialClasses;
+
+  const [selectedClassId, setSelectedClassId] = useState<string>(
+    initialReportData?.classId || availableClasses[0]?.id || "demo-inf212"
+  );
+  const [reportData, setReportData] = useState<ClassReportData | null>(
+    initialReportData
+  );
+  const [isPending, startTransition] = useTransition();
+
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<"all" | "at-risk" | "satisfactory" | "exemplary">("all");
   const [selectedAuditPeriod] = useState("1 Sep 2024 – 24 Oct 2024");
   const [currentPage, setCurrentPage] = useState(1);
   const [noticeSentStudentId, setNoticeSentStudentId] = useState<string | null>(null);
   const [bulkNoticeSent, setBulkNoticeSent] = useState(false);
+
+  // Determine current active student roster and metrics
+  const students: StudentReportItem[] = useMemo(() => {
+    if (reportData && reportData.studentRoster.length > 0) {
+      return reportData.studentRoster;
+    }
+    return DEMO_STUDENTS;
+  }, [reportData]);
+
+  const activeCourseCode =
+    reportData?.classCode ||
+    availableClasses.find((c) => c.id === selectedClassId)?.code ||
+    "INF212";
+
+  const activeCourseTitle =
+    reportData?.classTitle ||
+    availableClasses.find((c) => c.id === selectedClassId)?.title ||
+    "Data Structures & Algorithms";
+
+  const averageAttendance = reportData?.averageAttendanceRate ?? 87.4;
+  const totalSessionsHeld = reportData?.totalSessionsHeld ?? 14;
+  const enrolledCount = reportData?.enrolledStudentsCount ?? students.length;
+  const atRiskCount = reportData?.atRiskCount ?? students.filter((s) => s.category === "at-risk").length;
+  const biometricRate = reportData?.biometricVerificationRate ?? 98.1;
 
   // Filter students based on activeTab and searchQuery
   const filteredStudents = useMemo(() => {
@@ -183,14 +236,34 @@ export default function ReportsClientView() {
     });
   }, [students, activeTab, searchQuery]);
 
-  // Counts for tabs
-  const atRiskCount = students.filter((s) => s.category === "at-risk").length;
   const satisfactoryCount = students.filter((s) => s.category === "satisfactory").length;
   const exemplaryCount = students.filter((s) => s.category === "exemplary").length;
 
+  // Change class and load data
+  const handleClassChange = (newClassId: string) => {
+    setSelectedClassId(newClassId);
+    if (!isDemo && newClassId !== "demo-inf212") {
+      startTransition(async () => {
+        const data = await getClassReportDataAction(newClassId);
+        if (data) {
+          setReportData(data);
+        }
+      });
+    }
+  };
+
   // CSV Export Functionality
   const handleExportCSV = () => {
-    const headers = ["Index Number", "Full Name", "Email", "Program", "Sessions Attended", "Total Sessions", "Attendance Rate (%)", "Status"];
+    const headers = [
+      "Index Number",
+      "Full Name",
+      "Email",
+      "Program",
+      "Sessions Attended",
+      "Total Sessions",
+      "Attendance Rate (%)",
+      "Status",
+    ];
     const rows = students.map((s) => [
       s.indexNumber,
       `"${s.name}"`,
@@ -202,11 +275,16 @@ export default function ReportsClientView() {
       s.statusBadge,
     ]);
 
-    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
+    const csvContent =
+      "data:text/csv;charset=utf-8," +
+      [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `attend_pal_${selectedCourse}_attendance_report.csv`);
+    link.setAttribute(
+      "download",
+      `attend_pal_${activeCourseCode}_attendance_report.csv`
+    );
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -354,7 +432,7 @@ export default function ReportsClientView() {
                 <div className="flex items-center gap-2">
                   <Mail className="w-5 h-5 text-amber-700" />
                   <span className="font-label-md text-label-md">
-                    Automated deficiency notices successfully queued for all 6 at-risk students.
+                    Automated deficiency notices successfully queued for all {atRiskCount} at-risk students.
                   </span>
                 </div>
                 <button type="button" onClick={() => setBulkNoticeSent(false)}>
@@ -373,7 +451,9 @@ export default function ReportsClientView() {
                 <ChevronRight className="w-3.5 h-3.5" />
                 <span>Reports &amp; Analytics</span>
                 <ChevronRight className="w-3.5 h-3.5" />
-                <span className="text-on-surface font-medium">INF212 Course Attendance Audit</span>
+                <span className="text-on-surface font-medium">
+                  {activeCourseCode} Course Attendance Audit
+                </span>
               </nav>
 
               <div className="flex flex-wrap items-center justify-between gap-y-space-sm gap-x-space-md pt-1">
@@ -384,11 +464,11 @@ export default function ReportsClientView() {
                   <div className="flex items-center gap-2 mt-1">
                     <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-secondary-container text-on-secondary-fixed font-caption text-caption font-semibold">
                       <span className="w-1.5 h-1.5 rounded-full bg-primary-container" />
-                      INF212 · Data Structures
+                      {activeCourseCode} · {activeCourseTitle}
                     </span>
                     <span className="text-secondary font-caption text-caption">•</span>
                     <span className="text-secondary font-caption text-caption">
-                      BSc Computer Science • Semester 2 (2024/2025) • 52 Enrolled Students
+                      BSc Computer Science • Semester 2 (2024/2025) • {enrolledCount} Enrolled Students
                     </span>
                   </div>
                 </div>
@@ -429,18 +509,20 @@ export default function ReportsClientView() {
                 {/* Course Selector */}
                 <div className="lg:col-span-3 flex flex-col gap-1">
                   <label className="font-caption text-caption text-secondary uppercase font-semibold tracking-wider">
-                    Course Cohort
+                    Course Cohort {isPending && <span className="text-primary normal-case font-normal">(Loading...)</span>}
                   </label>
                   <div className="relative">
                     <select
-                      className="w-full h-11 pl-3 pr-9 bg-surface-container-low text-on-surface font-label-md text-label-md rounded-xl appearance-none focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer"
-                      value={selectedCourse}
-                      onChange={(e) => setSelectedCourse(e.target.value)}
+                      className="w-full h-11 pl-3 pr-9 bg-surface-container-low text-on-surface font-label-md text-label-md rounded-xl appearance-none focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer disabled:opacity-50"
+                      value={selectedClassId}
+                      disabled={isPending}
+                      onChange={(e) => handleClassChange(e.target.value)}
                     >
-                      <option value="INF212">INF212 · Data Structures &amp; Algorithms</option>
-                      <option value="INF204">INF204 · Object Oriented Programming</option>
-                      <option value="CS311">CS311 · Database Systems II</option>
-                      <option value="MTH221">MTH221 · Discrete Mathematics</option>
+                      {availableClasses.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.code} · {c.title}
+                        </option>
+                      ))}
                     </select>
                     <Filter className="text-secondary absolute right-3 top-3 pointer-events-none w-4 h-4" />
                   </div>
@@ -518,7 +600,9 @@ export default function ReportsClientView() {
                   <div className="flex flex-col">
                     <span className="font-label-md text-label-md text-secondary">Average Attendance</span>
                     <div className="flex items-baseline gap-2 mt-1">
-                      <span className="font-display-lg text-display-lg text-on-surface font-bold">87.4%</span>
+                      <span className="font-display-lg text-display-lg text-on-surface font-bold">
+                        {averageAttendance.toFixed(1)}%
+                      </span>
                     </div>
                   </div>
                   <div className="w-10 h-10 rounded-xl bg-surface-container-low text-primary flex items-center justify-center">
@@ -539,7 +623,7 @@ export default function ReportsClientView() {
                   <div className="flex flex-col">
                     <span className="font-label-md text-label-md text-secondary">Sessions Held</span>
                     <div className="flex items-baseline gap-2 mt-1">
-                      <span className="font-display-lg text-display-lg text-on-surface font-bold">14</span>
+                      <span className="font-display-lg text-display-lg text-on-surface font-bold">{totalSessionsHeld}</span>
                       <span className="font-caption text-caption text-secondary font-medium">/ 24 total</span>
                     </div>
                   </div>
@@ -549,11 +633,18 @@ export default function ReportsClientView() {
                 </div>
                 <div className="mt-4 pt-3 border-t border-surface-container">
                   <div className="w-full bg-surface-container rounded-full h-1.5 overflow-hidden">
-                    <div className="bg-primary-container h-full rounded-full" style={{ width: "58.3%" }} />
+                    <div
+                      className="bg-primary-container h-full rounded-full"
+                      style={{
+                        width: `${Math.min(100, (totalSessionsHeld / 24) * 100)}%`,
+                      }}
+                    />
                   </div>
                   <div className="flex items-center justify-between mt-2 font-caption text-caption text-secondary">
-                    <span>58.3% semester progress</span>
-                    <span>10 remaining</span>
+                    <span>
+                      {((totalSessionsHeld / 24) * 100).toFixed(1)}% semester progress
+                    </span>
+                    <span>{Math.max(0, 24 - totalSessionsHeld)} remaining</span>
                   </div>
                 </div>
               </div>
@@ -586,7 +677,9 @@ export default function ReportsClientView() {
                   <div className="flex flex-col">
                     <span className="font-label-md text-label-md text-secondary">Biometric Verification Rate</span>
                     <div className="flex items-baseline gap-2 mt-1">
-                      <span className="font-display-lg text-display-lg text-on-surface font-bold">98.1%</span>
+                      <span className="font-display-lg text-display-lg text-on-surface font-bold">
+                        {biometricRate.toFixed(1)}%
+                      </span>
                     </div>
                   </div>
                   <div className="w-10 h-10 rounded-xl bg-surface-container-low text-emerald-700 flex items-center justify-center">
@@ -611,7 +704,7 @@ export default function ReportsClientView() {
                     <div>
                       <h2 className="font-title-lg text-title-lg text-on-surface">Attendance Rate per Session (Trend)</h2>
                       <p className="font-caption text-caption text-secondary mt-0.5">
-                        Lectures 1 through 14 with 75% institutional cutoff threshold
+                        Lectures 1 through {Math.max(14, totalSessionsHeld)} with 75% institutional cutoff threshold
                       </p>
                     </div>
                     <div className="flex items-center gap-3">
