@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import {
   GraduationCap,
   LayoutGrid,
@@ -32,8 +33,39 @@ import {
   Check,
   Pencil,
   LogOut,
+  Sparkles,
 } from "lucide-react";
 import { signOutAction } from "@/app/auth/actions";
+
+interface JoinedClass {
+  code: string;
+  title: string;
+  programme: string | null;
+}
+
+interface SessionRow {
+  id: string;
+  class_id: string;
+  lecturer_id: string;
+  title: string;
+  token: string;
+  starts_at: string;
+  ends_at: string;
+  venue_name: string | null;
+  radius_m: number;
+  status: "open" | "closed";
+  classes: JoinedClass | null;
+}
+
+interface AlertRow {
+  id: string;
+  session_id: string;
+  type: string;
+  severity: "high" | "medium" | "low";
+  claimed_index: string | null;
+  status: "new" | "reviewed" | "dismissed";
+  created_at: string;
+}
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -46,17 +78,17 @@ export default async function DashboardPage() {
     redirect("/login");
   }
 
-  // Fetch lecturer profile
-  const { data } = await supabase
+  // 1. Fetch lecturer profile
+  const { data: profileData } = await supabase
     .from("lecturers")
-    .select("full_name, institution, department")
+    .select("full_name, institution, campus")
     .eq("id", user.id)
     .single();
 
-  const profile = data as {
+  const profile = profileData as {
     full_name?: string;
     institution?: string;
-    department?: string;
+    campus?: string;
   } | null;
 
   const fullName =
@@ -67,8 +99,82 @@ export default async function DashboardPage() {
   const firstName = fullName.split(" ")[0];
   const institutionName =
     profile?.institution || "University of Cape Coast";
-  const departmentName =
-    profile?.department || "Department of Computer Science";
+  const campusName =
+    profile?.campus || "UCC Main Campus • North Wing";
+
+  // 2. Fetch classes count
+  const { count: classesCount } = await supabase
+    .from("classes")
+    .select("id", { count: "exact", head: true })
+    .eq("lecturer_id", user.id);
+
+  // 3. Fetch lecturer's sessions
+  const { data: rawSessions } = await supabase
+    .from("sessions")
+    .select("id, class_id, lecturer_id, title, token, starts_at, ends_at, venue_name, radius_m, status, classes(code, title, programme)")
+    .eq("lecturer_id", user.id)
+    .order("starts_at", { ascending: false })
+    .limit(10);
+
+  const sessions = (rawSessions as unknown as SessionRow[]) || [];
+
+  // 4. Fetch open alerts for this lecturer's sessions
+  const { data: rawAlerts } = await supabase
+    .from("alerts")
+    .select("id, session_id, type, severity, claimed_index, details, status, created_at, sessions!inner(lecturer_id)")
+    .eq("sessions.lecturer_id", user.id)
+    .order("created_at", { ascending: false })
+    .limit(10);
+
+  const alerts = (rawAlerts as unknown as AlertRow[]) || [];
+  const openAlertsCount = alerts.filter((a) => a.status === "new").length;
+
+  // Determine if this is a newly created account with 0 sessions
+  const hasLiveSessions = sessions.length > 0;
+
+  // Active session detection
+  const liveSession = sessions.find((s) => s.status === "open");
+
+  // Fallback demo data for look & feel demonstration
+  const demoActiveSession = {
+    code: "INF212",
+    title: "Data Structures & Algorithms",
+    venue: "Lecture Hall B",
+    radius_m: 25,
+    remainingText: "18 mins remaining (Closes 10:30 AM)",
+    kioskName: "Stationary Kiosk Terminal • Hall B Front Door",
+    terminalId: "Terminal #K-04",
+    totalEnrolled: 52,
+    checkedIn: 38,
+    quorumPercent: 73,
+    verified: 38,
+    flagged: 2,
+    awaiting: 12,
+  };
+
+  const activeDisplay = liveSession
+    ? {
+        code: liveSession.classes?.code || "COURSE",
+        title: liveSession.title || liveSession.classes?.title || "Active Session",
+        venue: liveSession.venue_name || "Lecture Hall B",
+        radius_m: liveSession.radius_m || 50,
+        remainingText: `Closes at ${new Date(liveSession.ends_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`,
+        kioskName: "Stationary Kiosk Terminal • Active Session",
+        terminalId: "Terminal #Live-01",
+        totalEnrolled: 50,
+        checkedIn: 0,
+        quorumPercent: 0,
+        verified: 0,
+        flagged: 0,
+        awaiting: 50,
+      }
+    : demoActiveSession;
+
+  // Circular ring calculations (r = 40, circumference = 251.2)
+  const ringCircumference = 251.2;
+  const quorumDashoffset = (
+    ringCircumference * (1 - activeDisplay.quorumPercent / 100)
+  ).toFixed(1);
 
   return (
     <div className="flex min-h-screen bg-surface">
@@ -93,33 +199,38 @@ export default async function DashboardPage() {
           {/* Navigation Links */}
           <div className="px-4 pt-6">
             <nav className="flex flex-col gap-1">
-              <a
+              <Link
                 href="/dashboard"
                 aria-current="page"
                 className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-primary-container text-on-primary font-semibold shadow-sm transition-all text-label-md"
               >
                 <LayoutGrid className="h-5 w-5" />
                 <span>Dashboard</span>
-              </a>
+              </Link>
 
-              <a
-                href="#classes"
+              <Link
+                href="/classes"
                 className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all font-label-lg text-label-md font-medium"
               >
                 <BookOpen className="h-5 w-5" />
                 <span>Classes</span>
-              </a>
+                {classesCount !== null && classesCount > 0 && (
+                  <span className="ml-auto px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant font-caption text-caption font-semibold">
+                    {classesCount}
+                  </span>
+                )}
+              </Link>
 
-              <a
-                href="#sessions"
+              <Link
+                href="/sessions"
                 className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all font-label-lg text-label-md font-medium"
               >
                 <Clock className="h-5 w-5" />
                 <span>Sessions</span>
-              </a>
+              </Link>
 
-              <a
-                href="#alerts"
+              <Link
+                href="/alerts"
                 className="flex items-center justify-between px-4 py-2.5 rounded-xl text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all font-label-lg text-label-md font-medium"
               >
                 <div className="flex items-center gap-3">
@@ -127,25 +238,25 @@ export default async function DashboardPage() {
                   <span>Alerts</span>
                 </div>
                 <span className="px-2 py-0.5 rounded-full bg-error-container text-on-error-container font-caption text-caption font-bold">
-                  3
+                  {hasLiveSessions ? openAlertsCount : 3}
                 </span>
-              </a>
+              </Link>
 
-              <a
-                href="#reports"
+              <Link
+                href="/reports"
                 className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all font-label-lg text-label-md font-medium"
               >
                 <BarChart3 className="h-5 w-5" />
                 <span>Reports</span>
-              </a>
+              </Link>
 
-              <a
-                href="#settings"
+              <Link
+                href="/settings"
                 className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all font-label-lg text-label-md font-medium"
               >
                 <Settings className="h-5 w-5" />
                 <span>Settings</span>
-              </a>
+              </Link>
             </nav>
           </div>
         </div>
@@ -164,7 +275,7 @@ export default async function DashboardPage() {
                   Faculty of Science
                 </span>
                 <span className="font-caption text-caption text-secondary truncate">
-                  UCC Main Campus • North Wing
+                  {campusName}
                 </span>
               </div>
             </div>
@@ -217,13 +328,13 @@ export default async function DashboardPage() {
           <div className="flex items-center gap-4">
             {/* Notification Bell */}
             <div className="relative">
-              <button
-                type="button"
+              <Link
+                href="/alerts"
                 className="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors cursor-pointer"
                 aria-label="Notifications"
               >
                 <Bell className="h-5 w-5" />
-              </button>
+              </Link>
               <span className="absolute top-2 right-2 w-2.5 h-2.5 rounded-full bg-error ring-2 ring-surface-container-lowest"></span>
             </div>
 
@@ -248,6 +359,33 @@ export default async function DashboardPage() {
 
         {/* ── Main Content Dashboard ── */}
         <main className="w-full pt-20 px-6 lg:px-10 pb-12 flex flex-col gap-6">
+          {/* Welcome Banner for Newly Registered Accounts */}
+          {!hasLiveSessions && (
+            <div className="rounded-2xl bg-primary-fixed/30 border border-primary-fixed-dim/60 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="p-2 rounded-xl bg-primary-container text-on-primary flex-shrink-0 mt-0.5">
+                  <Sparkles className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="font-title-md text-title-md font-bold text-primary">
+                    Welcome to Attend Pal, {firstName}!
+                  </h3>
+                  <p className="font-body-md text-secondary text-label-md mt-0.5">
+                    Your account is verified at {institutionName}. Below is a demonstration of your live roll-call and telemetry dashboard. Set up your course rosters to start conducting real sessions.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2.5 self-start sm:self-auto flex-shrink-0">
+                <Link
+                  href="/classes"
+                  className="px-4 py-2 rounded-xl bg-primary text-on-primary font-label-md text-label-md font-semibold shadow-sm hover:opacity-95 transition-all"
+                >
+                  Set up Classes
+                </Link>
+              </div>
+            </div>
+          )}
+
           {/* Header Greeting & Action Bar */}
           <section className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex flex-col gap-1">
@@ -261,26 +399,26 @@ export default async function DashboardPage() {
                 Good morning, {firstName}
               </h1>
               <p className="font-caption text-caption text-secondary">
-                {departmentName} • {institutionName} • Semester 2, 2024
+                Department of Computer Science • {institutionName} • Semester 2, 2024
               </p>
             </div>
 
             <div className="flex items-center gap-3 self-start sm:self-auto">
-              <button
-                type="button"
+              <Link
+                href="/reports"
                 className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-surface-container-lowest text-secondary font-label-lg text-label-md font-medium shadow-sm border border-surface-container-high hover:bg-surface-container hover:text-on-surface transition-all active:scale-[0.98] cursor-pointer"
               >
                 <Download className="h-4 w-4" />
                 <span>Export Roster</span>
-              </button>
+              </Link>
 
-              <button
-                type="button"
+              <Link
+                href="/sessions/new"
                 className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary-container text-on-primary font-label-lg text-label-md font-semibold shadow-sm hover:opacity-95 transition-all active:scale-[0.98] cursor-pointer"
               >
                 <Plus className="h-4 w-4" />
                 <span>+ New session</span>
-              </button>
+              </Link>
             </div>
           </section>
 
@@ -298,11 +436,13 @@ export default async function DashboardPage() {
               </div>
               <div className="flex flex-col">
                 <span className="font-display-lg text-display-lg text-on-surface font-bold">
-                  3
+                  {hasLiveSessions ? sessions.length : 3}
                 </span>
                 <div className="flex items-center gap-1.5 mt-1 text-secondary font-caption text-caption">
                   <span className="w-2 h-2 rounded-full bg-tertiary-fixed-dim"></span>
-                  <span>1 active now, 2 upcoming</span>
+                  <span>
+                    {liveSession ? "1 active now" : "1 active now, 2 upcoming"}
+                  </span>
                 </div>
               </div>
             </div>
@@ -319,7 +459,7 @@ export default async function DashboardPage() {
               </div>
               <div className="flex flex-col">
                 <span className="font-display-lg text-display-lg text-on-surface font-bold">
-                  142
+                  {hasLiveSessions ? activeDisplay.verified : 142}
                 </span>
                 <div className="flex items-center gap-1.5 mt-1 text-tertiary-container font-caption text-caption font-medium">
                   <CheckCircle2 className="h-4 w-4" />
@@ -341,7 +481,7 @@ export default async function DashboardPage() {
               <div className="flex flex-col">
                 <div className="flex items-baseline gap-2">
                   <span className="font-display-lg text-display-lg text-error font-bold">
-                    4
+                    {hasLiveSessions ? openAlertsCount : 4}
                   </span>
                   <span className="px-2 py-0.5 rounded-full bg-error text-on-error font-caption text-caption font-semibold">
                     Requires Action
@@ -402,30 +542,30 @@ export default async function DashboardPage() {
 
                   <span className="inline-flex items-center gap-1.5 text-secondary font-caption text-caption bg-surface-container-low px-2.5 py-1 rounded-full border border-surface-container-high">
                     <Radio className="h-3.5 w-3.5 text-tertiary-container" />
-                    Terminal #K-04
+                    {activeDisplay.terminalId}
                   </span>
                 </div>
 
                 {/* Course Meta */}
                 <div className="flex flex-col gap-1.5">
                   <h2 className="font-headline-sm text-headline-sm font-bold text-on-surface">
-                    INF212 • Data Structures &amp; Algorithms
+                    {activeDisplay.code} • {activeDisplay.title}
                   </h2>
                   <div className="flex flex-wrap items-center gap-2 text-secondary font-caption text-caption">
                     <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-surface-container font-medium text-on-surface">
                       <MapPin className="h-3.5 w-3.5 text-primary" />
-                      Lecture Hall B (Geo-fence active ±25m)
+                      {activeDisplay.venue} (Geo-fence active ±{activeDisplay.radius_m}m)
                     </span>
                     <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-surface-container-low">
                       <Clock className="h-3.5 w-3.5" />
-                      18 mins remaining (Closes 10:30 AM)
+                      {activeDisplay.remainingText}
                     </span>
                   </div>
                 </div>
 
                 {/* Progress Visualization & Telemetry */}
                 <div className="p-4 rounded-xl bg-surface-container-low flex flex-col sm:flex-row items-center gap-5 border border-surface-container-high">
-                  {/* Circular SVG Progress Ring (73% Quorum) */}
+                  {/* Circular SVG Progress Ring */}
                   <div className="relative w-28 h-28 flex-shrink-0 flex items-center justify-center">
                     <svg
                       className="w-full h-full transform -rotate-90"
@@ -447,15 +587,15 @@ export default async function DashboardPage() {
                         fill="transparent"
                         r="40"
                         stroke="currentColor"
-                        strokeDasharray="251.2"
-                        strokeDashoffset="67.8"
+                        strokeDasharray={ringCircumference}
+                        strokeDashoffset={quorumDashoffset}
                         strokeLinecap="round"
                         strokeWidth="9"
                       />
                     </svg>
                     <div className="absolute flex flex-col items-center justify-center text-center">
                       <span className="font-title-lg text-title-lg text-on-surface font-bold leading-none">
-                        73%
+                        {activeDisplay.quorumPercent}%
                       </span>
                       <span className="font-caption text-caption text-secondary uppercase text-[10px] mt-0.5 font-semibold">
                         Quorum
@@ -467,7 +607,7 @@ export default async function DashboardPage() {
                   <div className="flex flex-col flex-1 w-full gap-2">
                     <div className="flex items-center justify-between">
                       <span className="font-title-md text-title-md text-on-surface font-semibold">
-                        38 / 52 Checked In
+                        {activeDisplay.checkedIn} / {activeDisplay.totalEnrolled} Checked In
                       </span>
                       <span className="font-caption text-caption text-tertiary-container font-semibold inline-flex items-center gap-1">
                         <CheckCircle2 className="h-4 w-4" />
@@ -479,7 +619,7 @@ export default async function DashboardPage() {
                     <div className="w-full h-2 rounded-full bg-surface-container-high overflow-hidden">
                       <div
                         className="h-full bg-primary-container rounded-full"
-                        style={{ width: "73.07%" }}
+                        style={{ width: `${activeDisplay.quorumPercent}%` }}
                       ></div>
                     </div>
 
@@ -487,7 +627,7 @@ export default async function DashboardPage() {
                     <div className="grid grid-cols-3 gap-2 pt-1 text-center">
                       <div className="flex flex-col p-2 rounded-lg bg-surface-container-lowest border border-surface-container-high">
                         <span className="font-title-md text-title-md text-tertiary-container font-bold">
-                          38
+                          {activeDisplay.verified}
                         </span>
                         <span className="font-caption text-caption text-secondary text-[11px] leading-tight">
                           Verified Present
@@ -495,7 +635,7 @@ export default async function DashboardPage() {
                       </div>
                       <div className="flex flex-col p-2 rounded-lg bg-surface-container-lowest border border-surface-container-high">
                         <span className="font-title-md text-title-md text-error font-bold">
-                          2
+                          {activeDisplay.flagged}
                         </span>
                         <span className="font-caption text-caption text-secondary text-[11px] leading-tight">
                           Flagged Flags
@@ -503,7 +643,7 @@ export default async function DashboardPage() {
                       </div>
                       <div className="flex flex-col p-2 rounded-lg bg-surface-container-lowest border border-surface-container-high">
                         <span className="font-title-md text-title-md text-on-surface font-bold">
-                          12
+                          {activeDisplay.awaiting}
                         </span>
                         <span className="font-caption text-caption text-secondary text-[11px] leading-tight">
                           Awaiting Scan
@@ -518,22 +658,22 @@ export default async function DashboardPage() {
               <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-surface-container-high">
                 <div className="flex items-center gap-1.5 text-secondary font-caption text-caption">
                   <Radio className="h-4 w-4 text-tertiary-container" />
-                  <span>Stationary Kiosk Terminal • Hall B Front Door</span>
+                  <span>{activeDisplay.kioskName}</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button
-                    type="button"
+                  <Link
+                    href={liveSession ? `/sessions/${liveSession.id}` : "/sessions"}
                     className="px-4 py-2 rounded-xl bg-surface-container-high text-error font-label-md text-label-md font-semibold hover:bg-error-container hover:text-on-error-container transition-colors cursor-pointer"
                   >
                     Close session
-                  </button>
-                  <button
-                    type="button"
+                  </Link>
+                  <Link
+                    href={liveSession ? `/sessions/${liveSession.id}/monitor` : "/sessions/monitor"}
                     className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary-container text-on-primary font-label-md text-label-md font-semibold shadow-sm hover:opacity-95 transition-all cursor-pointer"
                   >
                     <Monitor className="h-4 w-4" />
                     <span>Open monitor</span>
-                  </button>
+                  </Link>
                 </div>
               </div>
             </div>
@@ -549,19 +689,19 @@ export default async function DashboardPage() {
                         Recent alerts
                       </h2>
                       <span className="px-2 py-0.5 rounded-full bg-error-container text-on-error-container font-caption text-caption font-bold">
-                        4 new
+                        {hasLiveSessions ? openAlertsCount : 4} new
                       </span>
                     </div>
                     <span className="font-caption text-caption text-secondary">
                       Security &amp; geofence flags requiring attention
                     </span>
                   </div>
-                  <a
-                    href="#alerts"
+                  <Link
+                    href="/alerts"
                     className="font-label-md text-label-md text-primary font-semibold hover:underline"
                   >
-                    View all (4)
-                  </a>
+                    View all ({hasLiveSessions ? alerts.length : 4})
+                  </Link>
                 </div>
 
                 {/* Alerts List */}
@@ -584,13 +724,13 @@ export default async function DashboardPage() {
                         </span>
                       </div>
                     </div>
-                    <button
-                      type="button"
+                    <Link
+                      href="/alerts/fake-identity"
                       className="inline-flex items-center gap-0.5 px-2.5 py-1.5 rounded-lg bg-surface-container-lowest text-primary font-label-md text-label-md font-semibold hover:bg-primary-container hover:text-on-primary transition-all flex-shrink-0 shadow-sm border border-surface-container-high cursor-pointer"
                     >
                       <span>Review</span>
                       <ChevronRight className="h-3.5 w-3.5" />
-                    </button>
+                    </Link>
                   </div>
 
                   {/* Alert 2: Out of bounds */}
@@ -611,13 +751,13 @@ export default async function DashboardPage() {
                         </span>
                       </div>
                     </div>
-                    <button
-                      type="button"
+                    <Link
+                      href="/alerts/out-of-bounds"
                       className="inline-flex items-center gap-0.5 px-2.5 py-1.5 rounded-lg bg-surface-container-lowest text-primary font-label-md text-label-md font-semibold hover:bg-primary-container hover:text-on-primary transition-all flex-shrink-0 shadow-sm border border-surface-container-high cursor-pointer"
                     >
                       <span>Review</span>
                       <ChevronRight className="h-3.5 w-3.5" />
-                    </button>
+                    </Link>
                   </div>
 
                   {/* Alert 3: Window cutoff check-in */}
@@ -638,13 +778,13 @@ export default async function DashboardPage() {
                         </span>
                       </div>
                     </div>
-                    <button
-                      type="button"
+                    <Link
+                      href="/alerts/window-cutoff"
                       className="inline-flex items-center gap-0.5 px-2.5 py-1.5 rounded-lg bg-surface-container-lowest text-primary font-label-md text-label-md font-semibold hover:bg-primary-container hover:text-on-primary transition-all flex-shrink-0 shadow-sm border border-surface-container-high cursor-pointer"
                     >
                       <span>Review</span>
                       <ChevronRight className="h-3.5 w-3.5" />
-                    </button>
+                    </Link>
                   </div>
 
                   {/* Alert 4: Multiple device signature */}
@@ -665,13 +805,13 @@ export default async function DashboardPage() {
                         </span>
                       </div>
                     </div>
-                    <button
-                      type="button"
+                    <Link
+                      href="/alerts/multiple-devices"
                       className="inline-flex items-center gap-0.5 px-2.5 py-1.5 rounded-lg bg-surface-container-lowest text-primary font-label-md text-label-md font-semibold hover:bg-primary-container hover:text-on-primary transition-all flex-shrink-0 shadow-sm border border-surface-container-high cursor-pointer"
                     >
                       <span>Review</span>
                       <ChevronRight className="h-3.5 w-3.5" />
-                    </button>
+                    </Link>
                   </div>
                 </div>
               </div>
@@ -682,12 +822,12 @@ export default async function DashboardPage() {
                   <Info className="h-4 w-4 text-primary" />
                   Auto-quarantine enabled for high risks
                 </span>
-                <button
-                  type="button"
+                <Link
+                  href="/alerts"
                   className="text-primary font-semibold hover:underline cursor-pointer"
                 >
                   Batch Dismiss Normal
-                </button>
+                </Link>
               </div>
             </div>
           </section>
@@ -710,7 +850,7 @@ export default async function DashboardPage() {
                     type="button"
                     className="px-3 py-1 rounded-lg bg-surface-container-lowest text-on-surface font-semibold shadow-sm cursor-pointer"
                   >
-                    All (4)
+                    All ({hasLiveSessions ? sessions.length : 4})
                   </button>
                   <button
                     type="button"
@@ -795,12 +935,12 @@ export default async function DashboardPage() {
                       </div>
                     </td>
                     <td className="py-4 px-4 text-right">
-                      <button
-                        type="button"
+                      <Link
+                        href="/sessions/INF212/manage"
                         className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary-container text-on-primary font-label-md text-label-md font-semibold shadow-sm hover:opacity-90 transition-all cursor-pointer"
                       >
                         Manage
-                      </button>
+                      </Link>
                     </td>
                   </tr>
 
@@ -846,12 +986,12 @@ export default async function DashboardPage() {
                     </td>
                     <td className="py-4 px-4 text-right">
                       <div className="inline-flex items-center gap-1.5 justify-end">
-                        <button
-                          type="button"
+                        <Link
+                          href="/sessions/CS302/start"
                           className="px-2.5 py-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-primary font-label-md text-label-md font-semibold transition-colors cursor-pointer"
                         >
                           Start early
-                        </button>
+                        </Link>
                         <button
                           type="button"
                           className="p-1.5 rounded-lg text-secondary hover:bg-surface-container hover:text-on-surface transition-colors cursor-pointer"
@@ -905,12 +1045,12 @@ export default async function DashboardPage() {
                       </span>
                     </td>
                     <td className="py-4 px-4 text-right">
-                      <button
-                        type="button"
+                      <Link
+                        href="/reports/INF204"
                         className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-surface-container-low text-primary font-label-md text-label-md font-semibold hover:bg-surface-container transition-colors cursor-pointer"
                       >
                         View report
-                      </button>
+                      </Link>
                     </td>
                   </tr>
 
@@ -956,12 +1096,12 @@ export default async function DashboardPage() {
                       </span>
                     </td>
                     <td className="py-4 px-4 text-right">
-                      <button
-                        type="button"
+                      <Link
+                        href="/reports/CS401"
                         className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-surface-container-low text-primary font-label-md text-label-md font-semibold hover:bg-surface-container transition-colors cursor-pointer"
                       >
                         View report
-                      </button>
+                      </Link>
                     </td>
                   </tr>
                 </tbody>
@@ -970,7 +1110,9 @@ export default async function DashboardPage() {
 
             {/* Table Footer with pagination */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 text-secondary font-caption text-caption border-t border-surface-container-high">
-              <span>Showing 4 active and recent course sessions</span>
+              <span>
+                Showing {hasLiveSessions ? sessions.length : 4} active and recent course sessions
+              </span>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
