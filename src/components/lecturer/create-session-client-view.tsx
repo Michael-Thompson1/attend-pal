@@ -63,6 +63,12 @@ export default function CreateSessionClientView({
   const [allowSecondCheckin, setAllowSecondCheckin] = useState(false);
   const [notifySuspicious, setNotifySuspicious] = useState(true);
   const [selectedVenue, setSelectedVenue] = useState("Lecture Hall B");
+  const [sessionDate, setSessionDate] = useState(() => {
+    const d = new Date();
+    return d.toISOString().split("T")[0];
+  });
+  const [startTime, setStartTime] = useState("10:00");
+  const [endTime, setEndTime] = useState("10:15");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -71,18 +77,17 @@ export default function CreateSessionClientView({
 
   const selectedClass = classes.find((c) => c.id === selectedClassId);
 
-  // Build ISO datetime strings for today + configurable times
-  const now = new Date();
-  const todayDate = now.toISOString().split("T")[0]; // YYYY-MM-DD
-  const startsAt = `${todayDate}T10:00:00`;
-  const endsAt = `${todayDate}T10:15:00`;
-
-  const displayDate = now.toLocaleDateString("en-GB", {
-    weekday: "long",
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+  // Compute duration in minutes between start and end times
+  const windowDurationMinutes = (() => {
+    try {
+      const [sh, sm] = startTime.split(":").map(Number);
+      const [eh, em] = endTime.split(":").map(Number);
+      const diff = eh * 60 + em - (sh * 60 + sm);
+      return diff > 0 ? diff : 15;
+    } catch {
+      return 15;
+    }
+  })();
 
   function handleSubmit() {
     if (!selectedClassId) {
@@ -94,6 +99,9 @@ export default function CreateSessionClientView({
       return;
     }
     setError(null);
+
+    const startsAt = `${sessionDate}T${startTime}:00`;
+    const endsAt = `${sessionDate}T${endTime}:00`;
 
     const formData = new FormData();
     formData.set("class_id", selectedClassId);
@@ -460,10 +468,10 @@ export default function CreateSessionClientView({
                       <span>Session Date</span>
                     </label>
                     <input
-                      type="text"
-                      readOnly
-                      value={`Today, ${displayDate}`}
-                      className="w-full h-11 px-4 rounded-xl bg-surface-container-lowest border border-surface-container-high text-on-surface font-label-lg text-label-md font-semibold shadow-xs focus:outline-none"
+                      type="date"
+                      value={sessionDate}
+                      onChange={(e) => setSessionDate(e.target.value)}
+                      className="w-full h-11 px-4 rounded-xl bg-surface-container-lowest border border-surface-container-high text-on-surface font-label-lg text-label-md font-semibold shadow-xs focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer"
                     />
                   </div>
 
@@ -475,12 +483,25 @@ export default function CreateSessionClientView({
                       <div className="flex flex-col gap-1">
                         <span className="font-caption text-caption text-secondary">Start Time</span>
                         <div className="relative">
-                          <Clock className="absolute left-3 top-1/2 -translate-y-1/2 text-secondary h-4 w-4" />
+                          <Clock className="absolute left-3 top-1/2 -translate-y-1/2 text-secondary h-4 w-4 pointer-events-none" />
                           <input
-                            type="text"
-                            readOnly
-                            value="10:00 AM"
-                            className="w-full h-11 pl-9 pr-3 rounded-xl bg-surface-container-lowest border border-surface-container-high text-on-surface font-label-md text-label-md font-semibold shadow-xs focus:outline-none"
+                            type="time"
+                            value={startTime}
+                            onChange={(e) => {
+                              const newStart = e.target.value;
+                              setStartTime(newStart);
+                              // Auto-advance end time by 15 mins if end time falls before or equals new start
+                              try {
+                                const [h, m] = newStart.split(":").map(Number);
+                                const totalM = h * 60 + m + 15;
+                                const newEh = String(Math.floor(totalM / 60) % 24).padStart(2, "0");
+                                const newEm = String(totalM % 60).padStart(2, "0");
+                                setEndTime(`${newEh}:${newEm}`);
+                              } catch {
+                                // fallback
+                              }
+                            }}
+                            className="w-full h-11 pl-9 pr-3 rounded-xl bg-surface-container-lowest border border-surface-container-high text-on-surface font-label-md text-label-md font-semibold shadow-xs focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer"
                           />
                         </div>
                       </div>
@@ -488,12 +509,12 @@ export default function CreateSessionClientView({
                       <div className="flex flex-col gap-1">
                         <span className="font-caption text-caption text-secondary">End Time</span>
                         <div className="relative">
-                          <Clock className="absolute left-3 top-1/2 -translate-y-1/2 text-secondary h-4 w-4" />
+                          <Clock className="absolute left-3 top-1/2 -translate-y-1/2 text-secondary h-4 w-4 pointer-events-none" />
                           <input
-                            type="text"
-                            readOnly
-                            value="10:15 AM"
-                            className="w-full h-11 pl-9 pr-3 rounded-xl bg-surface-container-lowest border border-surface-container-high text-on-surface font-label-md text-label-md font-semibold shadow-xs focus:outline-none"
+                            type="time"
+                            value={endTime}
+                            onChange={(e) => setEndTime(e.target.value)}
+                            className="w-full h-11 pl-9 pr-3 rounded-xl bg-surface-container-lowest border border-surface-container-high text-on-surface font-label-md text-label-md font-semibold shadow-xs focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer"
                           />
                         </div>
                       </div>
@@ -502,7 +523,7 @@ export default function CreateSessionClientView({
                     <div className="flex items-center gap-2 mt-1.5 px-3 py-2 bg-surface-container rounded-lg">
                       <Hourglass className="text-primary h-4 w-4 shrink-0" />
                       <span className="font-caption text-caption text-on-secondary-container leading-tight">
-                        Students can only check in inside this 15-minute window.
+                        Students can only check in inside this {windowDurationMinutes}-minute window.
                       </span>
                     </div>
                   </div>
@@ -901,7 +922,7 @@ export default function CreateSessionClientView({
                   </span>
                   <span className="w-1.5 h-1.5 rounded-full bg-primary"></span>
                   <span className="font-caption text-caption text-secondary">
-                    15-min check-in window
+                    {windowDurationMinutes}-min check-in window
                   </span>
                 </div>
                 <span className="font-caption text-caption text-secondary">
