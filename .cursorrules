@@ -1,0 +1,69 @@
+# Attend Pal — Cursor Agent Rules & Project Specs
+
+Read this and `GEMINI.md` before EVERY task.
+
+## What this is
+Attend Pal is a university-grade web app that verifies student attendance using QR codes, geofencing, and selfie liveness/matching.
+- **Lecturers**: have accounts, use laptops/desktops, create sessions, monitor real-time attendance, review security alerts, export audit reports.
+- **Students**: NO accounts, mobile-first `/attend` flow, one task per screen, minimal code, large tap targets (44px+).
+
+---
+
+## Tech Stack & Architecture
+- **Framework**: Next.js 16.4.6 (App Router) with `--webpack` build flag
+- **Database & Auth**: Supabase SSR (`@/lib/supabase/server` and `@/lib/supabase/client`)
+- **Schema & Types**: Supabase Postgres schema in `/db/attend_pal_schema.sql` and typed in `src/lib/supabase/types.ts`.
+- **Styling**: Tailwind CSS with custom design tokens from `design/design.md`.
+- **Icons**: `lucide-react` (Note: use `Copy` instead of `ContentCopy`).
+
+---
+
+## Non-Negotiable Workflow (2-Pass System)
+For EVERY screen:
+1. **Pass 1 (Look Only):**
+   - Build UI layout matching Stitch designs using clean sample data.
+   - Separate into Server Component wrapper (`page.tsx`) and Client Component (`*-client-view.tsx`).
+   - Run verification gate:
+     ```bash
+     npm run lint
+     npx tsc --noEmit
+     npm run build
+     ```
+   - Commit Pass 1 when build exits with code 0.
+2. **Pass 2 (Wiring):**
+   - Implement Supabase Server Actions in `actions.ts`.
+   - Wire interactive state with React transitions (`useTransition`), optimistic updates, and error banners.
+   - Run verification gate again (`lint`, `tsc`, `build`).
+   - Commit Pass 2 with a descriptive commit message.
+
+---
+
+## Critical Environment & Coding Constraints
+1. **Windows EPERM Build Fix:** `next.config.ts` must maintain `experimental: { cpus: 1 }`. If a build encounters a transient EPERM directory lock on `.next`, simply run `npm run build` a second time without clearing cache.
+2. **SSR Hydration Safety:**
+   - Do NOT evaluate non-deterministic values (e.g. `Date.now()`, `window.location`, `Math.random()`) during server render.
+   - Pass dynamic values (like `baseUrl` or dates) from the Server Component via headers/props, or guard client-only values with `suppressHydrationWarning`.
+3. **Error Handling:**
+   - Server actions must return `{ error: string }` or `{ success: true, ... }`. Never throw raw unhandled exceptions to the client.
+4. **Security & Data Isolation:**
+   - Row Level Security (RLS) is active on all tables.
+   - Students never access the database directly; student check-ins must go through a secure server route using the service-role key.
+   - Verified selfies are never stored; only failed-identity evidence is retained temporarily (7 days) for audit.
+5. **No Developer Jargon in Student UI:**
+   - Plain language only: "Verified", "Out of bounds", "Check-in isn't open", "Identity check failed", "Sent to your lecturer for review", "Already checked in".
+
+---
+
+## Progress Map
+
+| Step | Feature | Route | Status |
+|---|---|---|---|
+| 1–4 | Landing, Register, Login, Dashboard | `/`, `/register`, `/login`, `/dashboard` | ✅ Done |
+| 5–13 | Classes Setup & Roster Management | `/classes` | ✅ Done |
+| 14 | Create Session (GPS Map & Radius) | `/sessions/new` | ✅ Done |
+| 15 | Live QR Pass (Rotating Token & Share) | `/sessions/[id]/qr` | ✅ Done |
+| 16 | Live Session Monitor (Real-time telemetry) | `/sessions/[id]/monitor` | ✅ Done |
+| 17 | Alerts Centre (Anomaly stream & Drawer) | `/alerts` | ✅ Done |
+| 18 | Attendance Reports & Analytics | `/reports` | ✅ Done |
+| **19** | **Lecturer Settings** | `/settings` | ⏳ **NEXT TO BUILD** |
+| **20** | **Student Self Check-in Flow** | `/attend` | ⏳ **PENDING** |
