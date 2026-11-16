@@ -65,5 +65,5 @@ For EVERY screen:
 | 16 | Live Session Monitor (Real-time telemetry) | `/sessions/[id]/monitor` | ✅ Done |
 | 17 | Alerts Centre (Anomaly stream & Drawer) | `/alerts` | ✅ Done |
 | 18 | Attendance Reports & Analytics | `/reports` | ✅ Done |
-| **19** | **Lecturer Settings** | `/settings` | ⏳ **NEXT TO BUILD** |
-| **20** | **Student Self Check-in Flow** | `/attend` | ⏳ **PENDING** |
+| 19 | Lecturer Settings | `/settings` | ✅ Done |
+| **20** | **Student Self Check-in Flow** | `/attend` | ⏳ **NEXT TO BUILD** |

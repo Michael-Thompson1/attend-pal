@@ -38,6 +38,7 @@ create table public.lecturers (
   full_name text not null default '',
   institution text default 'Faculty of Science',
   campus text default 'Main Campus',
+  photo_path text,                        -- Private storage path: {lecturer_id}/profile.jpg
   created_at timestamptz not null default now()
 );
 
@@ -51,6 +52,10 @@ create table public.lecturer_settings (
   default_require_liveness boolean not null default true,
   default_allow_second_checkin boolean not null default false,
   notify_suspicious boolean not null default true,
+  email_fake_identity boolean not null default true,
+  email_out_of_bounds boolean not null default false,
+  email_shared_device boolean not null default true,
+  email_session_summary boolean not null default true,
   updated_at timestamptz not null default now()
 );
 
@@ -346,7 +351,47 @@ create policy "lecturer reviews alerts of own sessions"
 alter publication supabase_realtime add table public.attendance, public.alerts;
 
 -- =====================================================================
--- STORAGE BUCKETS (Create in Supabase Dashboard > Storage as PRIVATE):
+-- STORAGE BUCKETS (private):
 --   1. 'reference-photos' : {class_id}/{index_number}.jpg
 --   2. 'alert-evidence'   : {session_id}/{alert_id}.jpg (Purged after 7 days)
+--   3. 'lecturer-photos'  : {lecturer_id}/profile.jpg
 -- =====================================================================
+insert into storage.buckets (id, name, public)
+values ('lecturer-photos', 'lecturer-photos', false)
+on conflict (id) do nothing;
+
+drop policy if exists "lecturer reads own profile photo" on storage.objects;
+create policy "lecturer reads own profile photo"
+  on storage.objects for select
+  to authenticated
+  using (
+    bucket_id = 'lecturer-photos'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+drop policy if exists "lecturer uploads own profile photo" on storage.objects;
+create policy "lecturer uploads own profile photo"
+  on storage.objects for insert
+  to authenticated
+  with check (
+    bucket_id = 'lecturer-photos'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+drop policy if exists "lecturer updates own profile photo" on storage.objects;
+create policy "lecturer updates own profile photo"
+  on storage.objects for update
+  to authenticated
+  using (
+    bucket_id = 'lecturer-photos'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+drop policy if exists "lecturer deletes own profile photo" on storage.objects;
+create policy "lecturer deletes own profile photo"
+  on storage.objects for delete
+  to authenticated
+  using (
+    bucket_id = 'lecturer-photos'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );

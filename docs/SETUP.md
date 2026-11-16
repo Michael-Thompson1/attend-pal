@@ -36,6 +36,8 @@ npm install
 3. Click **Run**
 4. Confirm all 9 tables appear in **Table Editor**
 
+Editing `db/attend_pal_schema.sql` does not change an existing Supabase project. After the first run, apply later files in `db/migrations/` the same way: paste the file into the SQL Editor and click **Run**. The settings update is `db/migrations/2026_settings_photo_and_email.sql`.
+
 ---
 
 ## 4. Configure Supabase Auth

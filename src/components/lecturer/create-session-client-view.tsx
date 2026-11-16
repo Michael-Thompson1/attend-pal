@@ -44,31 +44,49 @@ interface ClassRow {
   default_venue: string | null;
 }
 
+interface SessionDefaults {
+  radiusM: number;
+  windowMinutes: number;
+  requireLiveness: boolean;
+  allowSecondCheckin: boolean;
+  notifySuspicious: boolean;
+}
+
 interface CreateSessionClientProps {
   classes: ClassRow[];
+  defaults: SessionDefaults;
+}
+
+function addMinutes(start: string, minutes: number) {
+  const [hours, mins] = start.split(":").map(Number);
+  const total = hours * 60 + mins + minutes;
+  const nextHours = Math.floor(total / 60) % 24;
+  const nextMins = total % 60;
+  return `${String(nextHours).padStart(2, "0")}:${String(nextMins).padStart(2, "0")}`;
 }
 
 export default function CreateSessionClientView({
   classes,
+  defaults,
 }: CreateSessionClientProps) {
   const [selectedClassId, setSelectedClassId] = useState<string>(
     classes[0]?.id ?? ""
   );
   const [showClassDropdown, setShowClassDropdown] = useState(false);
-  const [radiusM, setRadiusM] = useState<number>(100);
+  const [radiusM, setRadiusM] = useState<number>(defaults.radiusM);
   const [sessionTitle, setSessionTitle] = useState(
     "Lecture 14: Binary Search Trees & Balanced AVL Trees"
   );
-  const [requireLiveness, setRequireLiveness] = useState(true);
-  const [allowSecondCheckin, setAllowSecondCheckin] = useState(false);
-  const [notifySuspicious, setNotifySuspicious] = useState(true);
+  const [requireLiveness, setRequireLiveness] = useState(defaults.requireLiveness);
+  const [allowSecondCheckin, setAllowSecondCheckin] = useState(defaults.allowSecondCheckin);
+  const [notifySuspicious, setNotifySuspicious] = useState(defaults.notifySuspicious);
   const [selectedVenue, setSelectedVenue] = useState("Lecture Hall B");
   const [sessionDate, setSessionDate] = useState(() => {
     const d = new Date();
     return d.toISOString().split("T")[0];
   });
   const [startTime, setStartTime] = useState("10:00");
-  const [endTime, setEndTime] = useState("10:15");
+  const [endTime, setEndTime] = useState(addMinutes("10:00", defaults.windowMinutes));
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
@@ -17,7 +17,6 @@ import {
   GraduationCap,
   IdCard,
   Info,
-  Laptop,
   LayoutGrid,
   Lock,
   LogOut,
@@ -29,21 +28,40 @@ import {
   Settings,
   Shield,
   SlidersHorizontal,
-  Smartphone,
   Trash2,
   User,
   X,
 } from "lucide-react";
 import { signOutAction } from "@/app/auth/actions";
+import {
+  changePasswordAction,
+  downloadMyDataAction,
+  removeProfilePhotoAction,
+  signOutOtherDevicesAction,
+  updateNotificationPrefsAction,
+  updateProfileAction,
+  updateSessionDefaultsAction,
+  uploadProfilePhotoAction,
+} from "@/app/(lecturer)/settings/actions";
+
+export type SettingsViewData = {
+  fullName: string;
+  email: string;
+  institution: string;
+  campus: string;
+  photoUrl: string | null;
+  radiusM: number;
+  windowMinutes: 15 | 30 | 45 | 60;
+  requireLiveness: boolean;
+  allowSecondCheckin: boolean;
+  emailFakeIdentity: boolean;
+  emailOutOfBounds: boolean;
+  emailSharedDevice: boolean;
+  emailSessionSummary: boolean;
+  updatedLabel: string;
+};
 
 type Panel = "profile" | "security" | "defaults" | "notifications" | "privacy";
-
-const SAMPLE = {
-  fullName: "Dr. Kwame Mensah",
-  email: "kwame.mensah@ucc.edu.gh",
-  institution: "Faculty of Science",
-  campus: "UCC Main Campus",
-};
 
 const PANELS: { id: Panel; label: string; icon: typeof IdCard }[] = [
   { id: "profile", label: "Profile", icon: IdCard },
@@ -65,19 +83,16 @@ const ALERT_ROWS = [
     id: "fake",
     title: "Fake identity attempt",
     body: "A photo or face did not match the student on the class list.",
-    email: true,
   },
   {
     id: "bounds",
     title: "Out of bounds attempt",
     body: "A student tried to check in from outside the class area.",
-    email: false,
   },
   {
     id: "device",
     title: "Several index numbers on one phone",
     body: "More than one student tried to check in from the same phone.",
-    email: true,
   },
 ] as const;
 
@@ -113,21 +128,29 @@ function Switch({
   );
 }
 
-export default function SettingsClientView() {
+export default function SettingsClientView({ data }: { data: SettingsViewData }) {
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const [isPending, startTransition] = useTransition();
   const [panel, setPanel] = useState<Panel>("profile");
   const [toast, setToast] = useState<string | null>(null);
-  const [fullName, setFullName] = useState(SAMPLE.fullName);
-  const [institution, setInstitution] = useState(SAMPLE.institution);
-  const [radius, setRadius] = useState(100);
-  const [windowMinutes, setWindowMinutes] = useState<(typeof WINDOWS)[number]["minutes"]>(30);
-  const [liveness, setLiveness] = useState(true);
-  const [secondCheckin, setSecondCheckin] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [fullName, setFullName] = useState(data.fullName);
+  const [institution, setInstitution] = useState(data.institution);
+  const [savedName, setSavedName] = useState(data.fullName);
+  const [savedInstitution, setSavedInstitution] = useState(data.institution);
+  const [photoUrl, setPhotoUrl] = useState(data.photoUrl);
+  const [radius, setRadius] = useState(data.radiusM);
+  const [windowMinutes, setWindowMinutes] = useState<(typeof WINDOWS)[number]["minutes"]>(
+    data.windowMinutes
+  );
+  const [liveness, setLiveness] = useState(data.requireLiveness);
+  const [secondCheckin, setSecondCheckin] = useState(data.allowSecondCheckin);
   const [emailAlerts, setEmailAlerts] = useState<Record<string, boolean>>({
-    fake: true,
-    bounds: false,
-    device: true,
+    fake: data.emailFakeIdentity,
+    bounds: data.emailOutOfBounds,
+    device: data.emailSharedDevice,
   });
-  const [summaryEmail, setSummaryEmail] = useState(true);
+  const [summaryEmail, setSummaryEmail] = useState(data.emailSessionSummary);
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -135,22 +158,36 @@ export default function SettingsClientView() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [otherDevice, setOtherDevice] = useState(true);
+  const [updatedLabel, setUpdatedLabel] = useState(data.updatedLabel);
 
   const profileDirty =
-    fullName.trim() !== SAMPLE.fullName || institution.trim() !== SAMPLE.institution;
+    fullName.trim() !== savedName || institution.trim() !== savedInstitution;
   const passwordsMismatch =
     confirmPassword.length > 0 && newPassword !== confirmPassword;
+
+  function run(
+    action: () => Promise<{ error?: string; success?: boolean; photoUrl?: string | null; json?: string; filename?: string }>,
+    onSuccess: (result: { photoUrl?: string | null; json?: string; filename?: string }) => void,
+    message: string
+  ) {
+    setError(null);
+    startTransition(async () => {
+      const result = await action();
+      if (result.error) {
+        setError(result.error);
+        setToast(null);
+        return;
+      }
+      onSuccess(result);
+      setToast(message);
+    });
+  }
   const initials = fullName
     .split(" ")
     .filter((part) => part.length > 0)
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() ?? "")
     .join("");
-
-  function showToast(message: string) {
-    setToast(message);
-  }
 
   return (
     <div className="flex min-h-screen bg-surface">
@@ -207,10 +244,10 @@ export default function SettingsClientView() {
                   Faculty &amp; Campus
                 </span>
                 <span className="truncate font-label-md text-label-md font-semibold text-on-surface">
-                  {SAMPLE.institution}
+                  {data.institution}
                 </span>
                 <span className="truncate font-caption text-caption text-secondary">
-                  {SAMPLE.campus}
+                  {data.campus}
                 </span>
               </div>
             </div>
@@ -222,10 +259,10 @@ export default function SettingsClientView() {
               </div>
               <div className="flex min-w-0 flex-col">
                 <span className="truncate font-label-md text-label-md font-semibold text-on-surface">
-                  {SAMPLE.fullName}
+                  {fullName || data.fullName}
                 </span>
                 <span className="truncate font-caption text-[11px] text-secondary">
-                  {SAMPLE.email}
+                  {data.email}
                 </span>
               </div>
             </div>
@@ -268,7 +305,7 @@ export default function SettingsClientView() {
               </div>
               <div className="flex flex-col text-left">
                 <span className="font-label-md text-label-md leading-tight font-semibold text-on-surface">
-                  {SAMPLE.fullName}
+                  {fullName || data.fullName}
                 </span>
                 <span className="font-caption text-caption leading-tight text-secondary">
                   Senior Lecturer
@@ -279,6 +316,23 @@ export default function SettingsClientView() {
         </header>
 
         <main className="flex w-full flex-col gap-6 px-6 pt-20 pb-12 lg:px-10">
+          {error && (
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-error/30 bg-error-container p-4">
+              <div className="flex items-center gap-2 text-on-error-container">
+                <AlertTriangle className="h-5 w-5 shrink-0" />
+                <span className="font-label-md font-semibold">{error}</span>
+              </div>
+              <button
+                type="button"
+                aria-label="Dismiss error"
+                onClick={() => setError(null)}
+                className="rounded-lg p-1 text-on-error-container"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+
           {toast && (
             <div className="flex items-center justify-between gap-3 rounded-xl border border-tertiary-container/30 bg-surface-container-lowest p-4 shadow-sm">
               <div className="flex items-center gap-2 text-tertiary">
@@ -353,9 +407,37 @@ export default function SettingsClientView() {
 
                   <div className="flex flex-col justify-between gap-4 rounded-xl bg-surface-container-low px-5 py-4 sm:flex-row sm:items-center">
                     <div className="flex items-center gap-4">
-                      <div className="flex h-20 w-20 items-center justify-center rounded-full bg-primary-fixed font-title-lg text-title-lg text-primary">
-                        {initials || "L"}
-                      </div>
+                      {photoUrl ? (
+                        // Signed photo URLs expire and are not a fixed image host.
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={photoUrl}
+                          alt={`${fullName || "Lecturer"} profile photo`}
+                          className="h-20 w-20 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-20 w-20 items-center justify-center rounded-full bg-primary-fixed font-title-lg text-title-lg text-primary">
+                          {initials || "L"}
+                        </div>
+                      )}
+                      <input
+                        ref={photoInputRef}
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        className="sr-only"
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          event.target.value = "";
+                          if (!file) return;
+                          const formData = new FormData();
+                          formData.set("photo", file);
+                          run(
+                            () => uploadProfilePhotoAction(formData),
+                            (result) => setPhotoUrl(result.photoUrl ?? null),
+                            "Profile photo saved"
+                          );
+                        }}
+                      />
                       <div className="flex flex-col">
                         <span className="font-title-md text-title-md text-on-surface">
                           Profile picture
@@ -368,8 +450,9 @@ export default function SettingsClientView() {
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => showToast("Photo upload is not connected yet")}
-                        className="inline-flex h-11 items-center gap-2 rounded-xl bg-surface-container-lowest px-4 font-label-lg text-label-lg text-on-surface shadow-sm hover:bg-surface-container"
+                        disabled={isPending}
+                        onClick={() => photoInputRef.current?.click()}
+                        className="inline-flex h-11 items-center gap-2 rounded-xl bg-surface-container-lowest px-4 font-label-lg text-label-lg text-on-surface shadow-sm hover:bg-surface-container disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         <Camera className="h-4 w-4" />
                         Change photo
@@ -377,7 +460,14 @@ export default function SettingsClientView() {
                       <button
                         type="button"
                         aria-label="Remove picture"
-                        onClick={() => showToast("Photo removed from this preview")}
+                        disabled={isPending || !photoUrl}
+                        onClick={() =>
+                          run(
+                            () => removeProfilePhotoAction(),
+                            () => setPhotoUrl(null),
+                            "Profile photo removed"
+                          )
+                        }
                         className="inline-flex h-11 w-11 items-center justify-center rounded-xl text-secondary hover:bg-error-container/40 hover:text-error"
                       >
                         <Trash2 className="h-5 w-5" />
@@ -413,7 +503,7 @@ export default function SettingsClientView() {
                     <span className="relative">
                       <Mail className="absolute top-1/2 left-4 h-5 w-5 -translate-y-1/2 text-outline" />
                       <input
-                        value={SAMPLE.email}
+                        value={data.email}
                         readOnly
                         className="h-12 w-full cursor-not-allowed rounded-xl border border-outline-variant bg-surface-container pr-11 pl-11 font-body-md text-body-md text-secondary"
                       />
@@ -468,12 +558,27 @@ export default function SettingsClientView() {
 
                   <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
                     <span className="font-caption text-caption text-secondary">
-                      Last updated: today at 9:15 AM
+                      Last updated: {updatedLabel} UTC
                     </span>
                     <button
                       type="button"
-                      disabled={!profileDirty || fullName.trim().length === 0}
-                      onClick={() => showToast("Settings saved")}
+                      disabled={isPending || !profileDirty || fullName.trim().length === 0}
+                      onClick={() =>
+                        run(
+                          () =>
+                            updateProfileAction({
+                              fullName,
+                              institution,
+                            }),
+                          () => {
+                            setSavedName(fullName.trim());
+                            setSavedInstitution(institution.trim());
+                            setFullName(fullName.trim());
+                            setInstitution(institution.trim());
+                          },
+                          "Profile saved"
+                        )
+                      }
                       className="inline-flex h-12 items-center gap-2 rounded-xl bg-primary px-6 font-label-lg text-label-lg text-on-primary disabled:cursor-not-allowed disabled:bg-surface-container-highest disabled:text-outline disabled:opacity-60"
                     >
                       <Check className="h-4 w-4" />
@@ -531,8 +636,24 @@ export default function SettingsClientView() {
                     <div className="flex flex-wrap gap-3">
                       <button
                         type="button"
-                        onClick={() => showToast("Password update is not connected yet")}
-                        className="inline-flex h-12 items-center gap-2 rounded-xl bg-primary-container px-5 font-label-lg text-label-lg text-on-primary hover:bg-primary"
+                        disabled={isPending}
+                        onClick={() =>
+                          run(
+                            () =>
+                              changePasswordAction({
+                                currentPassword,
+                                newPassword,
+                                confirmPassword,
+                              }),
+                            () => {
+                              setCurrentPassword("");
+                              setNewPassword("");
+                              setConfirmPassword("");
+                            },
+                            "Password updated"
+                          )
+                        }
+                        className="inline-flex h-12 items-center gap-2 rounded-xl bg-primary-container px-5 font-label-lg text-label-lg text-on-primary hover:bg-primary disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         <Save className="h-5 w-5" />
                         Update password
@@ -558,38 +679,25 @@ export default function SettingsClientView() {
                           Signed-in devices
                         </h2>
                         <p className="mt-1 font-body-md text-body-md text-secondary">
-                          Devices where you are currently signed in.
+                          This device stays signed in. Other phones and computers will be signed out.
                         </p>
                       </div>
                       <button
                         type="button"
-                        onClick={() => {
-                          setOtherDevice(false);
-                          showToast("Other devices signed out");
-                        }}
-                        className="inline-flex h-11 items-center gap-2 self-start rounded-xl border border-outline px-4 font-label-lg text-label-lg text-error hover:bg-error-container"
+                        disabled={isPending}
+                        onClick={() =>
+                          run(
+                            () => signOutOtherDevicesAction(),
+                            () => undefined,
+                            "Other devices signed out"
+                          )
+                        }
+                        className="inline-flex h-11 items-center gap-2 self-start rounded-xl border border-outline px-4 font-label-lg text-label-lg text-error hover:bg-error-container disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         <LogOut className="h-4 w-4" />
                         Sign out of other devices
                       </button>
                     </div>
-                    <DeviceRow
-                      icon={Laptop}
-                      name="This computer"
-                      detail="Chrome · Accra · Active now"
-                      current
-                    />
-                    {otherDevice && (
-                      <DeviceRow
-                        icon={Smartphone}
-                        name="Phone"
-                        detail="Safari · Accra · Last active 2 hours ago"
-                        onRevoke={() => {
-                          setOtherDevice(false);
-                          showToast("Phone signed out");
-                        }}
-                      />
-                    )}
                   </section>
                 </div>
               )}
@@ -694,14 +802,14 @@ export default function SettingsClientView() {
 
                   <div className="flex flex-col items-stretch justify-between gap-3 sm:flex-row sm:items-center">
                     <span className="font-caption text-caption text-secondary">
-                      Last changed: today at 9:42 AM
+                      Last changed: {updatedLabel} UTC
                     </span>
                     <div className="flex flex-col gap-2 sm:flex-row">
                       <button
                         type="button"
                         onClick={() => {
                           setRadius(100);
-                          setWindowMinutes(30);
+                          setWindowMinutes(15);
                           setLiveness(true);
                           setSecondCheckin(false);
                         }}
@@ -711,8 +819,21 @@ export default function SettingsClientView() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => showToast("Session defaults updated")}
-                        className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-primary-container px-6 font-label-lg text-label-lg font-bold text-on-primary hover:bg-primary"
+                        disabled={isPending}
+                        onClick={() =>
+                          run(
+                            () =>
+                              updateSessionDefaultsAction({
+                                radiusM: radius,
+                                windowMinutes,
+                                requireLiveness: liveness,
+                                allowSecondCheckin: secondCheckin,
+                              }),
+                            () => setUpdatedLabel("just now"),
+                            "Session defaults saved"
+                          )
+                        }
+                        className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-primary-container px-6 font-label-lg text-label-lg font-bold text-on-primary hover:bg-primary disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         <Save className="h-5 w-5" />
                         Save defaults
@@ -799,7 +920,20 @@ export default function SettingsClientView() {
                   <div className="flex justify-end px-6 pb-6 sm:px-8">
                     <button
                       type="button"
-                      onClick={() => showToast("Notification preferences saved")}
+                      disabled={isPending}
+                      onClick={() =>
+                        run(
+                          () =>
+                            updateNotificationPrefsAction({
+                              emailFakeIdentity: emailAlerts.fake,
+                              emailOutOfBounds: emailAlerts.bounds,
+                              emailSharedDevice: emailAlerts.device,
+                              emailSessionSummary: summaryEmail,
+                            }),
+                          () => setUpdatedLabel("just now"),
+                          "Notification preferences saved"
+                        )
+                      }
                       className="inline-flex h-12 items-center gap-2 rounded-xl bg-primary-container px-6 font-label-lg text-label-lg text-on-primary hover:bg-primary"
                     >
                       <Save className="h-5 w-5" />
@@ -835,7 +969,23 @@ export default function SettingsClientView() {
                     <div className="mt-6 flex justify-end">
                       <button
                         type="button"
-                        onClick={() => showToast("Your download will be ready in a moment")}
+                        disabled={isPending}
+                        onClick={() =>
+                          run(
+                            () => downloadMyDataAction(),
+                            (result) => {
+                              if (!result.json || !result.filename) return;
+                              const blob = new Blob([result.json], { type: "application/json" });
+                              const url = URL.createObjectURL(blob);
+                              const link = document.createElement("a");
+                              link.href = url;
+                              link.download = result.filename;
+                              link.click();
+                              URL.revokeObjectURL(url);
+                            },
+                            "Your data downloaded"
+                          )
+                        }
                         className="inline-flex h-12 items-center gap-2 rounded-xl border border-outline bg-surface-container-lowest px-5 font-label-lg text-label-lg text-on-surface hover:bg-surface-container-high"
                       >
                         <Download className="h-5 w-5 text-primary" />
@@ -901,7 +1051,8 @@ export default function SettingsClientView() {
                 type="button"
                 onClick={() => {
                   setDeleteOpen(false);
-                  showToast("Check your school email to confirm");
+                  setError(null);
+                  setToast("Account deletion isn't available yet");
                 }}
                 className="inline-flex h-11 items-center rounded-xl bg-error-container px-4 font-label-lg text-label-lg text-on-error-container"
               >
@@ -985,51 +1136,6 @@ function Rule({ met, text }: { met: boolean; text: string }) {
       <CheckCircle2 className={`h-4 w-4 ${met ? "text-tertiary" : "text-outline"}`} />
       {text}
     </span>
-  );
-}
-
-function DeviceRow({
-  icon: Icon,
-  name,
-  detail,
-  current,
-  onRevoke,
-}: {
-  icon: typeof Laptop;
-  name: string;
-  detail: string;
-  current?: boolean;
-  onRevoke?: () => void;
-}) {
-  return (
-    <div className="flex flex-col justify-between gap-3 rounded-xl bg-surface-container-low p-4 sm:flex-row sm:items-center">
-      <div className="flex items-start gap-3">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-surface-container-lowest text-primary">
-          <Icon className="h-6 w-6" />
-        </div>
-        <div>
-          <p className="font-title-md text-title-md text-on-surface">
-            {name}
-            {current && (
-              <span className="ml-2 rounded-full bg-secondary-container px-2 py-0.5 font-caption text-caption text-on-surface-variant">
-                This device
-              </span>
-            )}
-          </p>
-          <p className="font-caption text-caption text-secondary">{detail}</p>
-        </div>
-      </div>
-      {onRevoke && (
-        <button
-          type="button"
-          onClick={onRevoke}
-          className="inline-flex items-center gap-1 self-start font-label-md text-label-md text-secondary hover:text-error"
-        >
-          <X className="h-4 w-4" />
-          Revoke
-        </button>
-      )}
-    </div>
   );
 }
 

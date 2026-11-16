@@ -33,6 +33,7 @@ export interface Database {
           full_name: string;
           institution: string | null;
           campus: string | null;
+          photo_path: string | null;
           created_at: string;
         };
         Insert: {
@@ -40,6 +41,7 @@ export interface Database {
           full_name?: string;
           institution?: string | null;
           campus?: string | null;
+          photo_path?: string | null;
           created_at?: string;
         };
         Update: {
@@ -47,6 +49,7 @@ export interface Database {
           full_name?: string;
           institution?: string | null;
           campus?: string | null;
+          photo_path?: string | null;
           created_at?: string;
         };
         Relationships: [];
@@ -59,6 +62,10 @@ export interface Database {
           default_require_liveness: boolean;
           default_allow_second_checkin: boolean;
           notify_suspicious: boolean;
+          email_fake_identity: boolean;
+          email_out_of_bounds: boolean;
+          email_shared_device: boolean;
+          email_session_summary: boolean;
           updated_at: string;
         };
         Insert: {
@@ -68,6 +75,10 @@ export interface Database {
           default_require_liveness?: boolean;
           default_allow_second_checkin?: boolean;
           notify_suspicious?: boolean;
+          email_fake_identity?: boolean;
+          email_out_of_bounds?: boolean;
+          email_shared_device?: boolean;
+          email_session_summary?: boolean;
           updated_at?: string;
         };
         Update: {
@@ -77,6 +88,10 @@ export interface Database {
           default_require_liveness?: boolean;
           default_allow_second_checkin?: boolean;
           notify_suspicious?: boolean;
+          email_fake_identity?: boolean;
+          email_out_of_bounds?: boolean;
+          email_shared_device?: boolean;
+          email_session_summary?: boolean;
           updated_at?: string;
         };
         Relationships: [];
