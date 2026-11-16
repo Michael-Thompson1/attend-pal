@@ -10,13 +10,15 @@ Before building or restyling any Attend Pal screen:
 1. Call Stitch `list_screens` for project `16824782504686943603`.
 2. Download that step’s screenshot and HTML with `download_file`. View them before writing code.
 3. Match the Stitch layout, visible copy, spacing, and controls. Do not invent a simpler screen or paraphrase the labels.
-4. Drop the Tailwind CDN, Google font links, and external image URLs. Use this repo’s design tokens and `lucide-react` (`Copy`, not `ContentCopy`).
-5. Keep sample data only on Pass 1. Remove names like “Dr. Mensah” when wiring Pass 2.
+4. Result states are their own screens. Download each one before building that state: Session Link Inactive, Already Checked In, Check-in Isn't Open, Outside Class Area, and Identity Check Failed.
+5. Drop the Tailwind CDN, Google font links, and external image URLs. Use this repo’s design tokens and `lucide-react` (`Copy`, not `ContentCopy`).
+6. Keep sample data only on Pass 1. Remove names like “Dr. Mensah” when wiring Pass 2. Keep the Stitch layout and static sentences.
 
 ```tsx
-// ❌ BAD — a new layout that only keeps the heading
-<h1>You're marked present</h1>
-<p>You can close this page.</p>
+// ❌ BAD — a short heading in place of the Stitch inactive screen
+<h1>Link no longer active</h1>
+<p>Ask your lecturer for a new link or code.</p>
 
-// ✅ GOOD — the Stitch screen: kiosk header, session card, chips, student row, Done
+// ✅ GOOD — Stitch “Result: Session Link Inactive”: kiosk header, Session Closed,
+// “This link is no longer active”, verification tip, course rows, Scan new QR code
 ```

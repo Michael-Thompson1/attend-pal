@@ -23,7 +23,8 @@ For EVERY screen, before writing UI:
 1. Call Stitch `list_screens` on project `16824782504686943603`.
 2. Download the screenshot and HTML for each screen in that step with `download_file`, and view them.
 3. Match that layout, copy, spacing, and controls. Do not invent a simpler version or paraphrase the labels.
-4. Drop Tailwind CDN scripts, Google font links, and external image URLs. Use design tokens and `lucide-react`.
+4. Result states are separate screens. Download Session Link Inactive, Already Checked In, Check-in Isn't Open, Outside Class Area, and Identity Check Failed before building each one.
+5. Drop Tailwind CDN scripts, Google font links, and external image URLs. Use design tokens and `lucide-react`.
 
 ## Non-Negotiable Workflow (2-Pass System)
 For EVERY screen:
@@ -56,7 +57,7 @@ For EVERY screen:
    - Row Level Security (RLS) is active on all tables.
    - Students never access the database directly; student check-ins must go through a secure server route using the service-role key.
    - Verified selfies are never stored; only failed-identity evidence is retained temporarily (7 days) for audit.
-5. **Student copy follows the Stitch screen.** Keep these result phrases where that screen uses them: "Verified", "Out of bounds", "Check-in isn't open", "Identity check failed", "Sent to your lecturer for review", "Already checked in". Do not replace the Stitch layout with a shorter paraphrase.
+5. **Student copy follows the Stitch screen.** Keep these result phrases where that screen uses them: "This link is no longer active", "Verified", "Out of bounds", "Check-in isn't open", "Identity check failed", "Sent to your lecturer for review", "Already checked in". Do not replace the Stitch layout with a shorter paraphrase.
 
 ---
 
@@ -72,4 +73,4 @@ For EVERY screen:
 | 17 | Alerts Centre (Anomaly stream & Drawer) | `/alerts` | ✅ Done |
 | 18 | Attendance Reports & Analytics | `/reports` | ✅ Done |
 | 19 | Lecturer Settings | `/settings` | ✅ Done |
-| **20** | **Student Self Check-in Flow** | `/attend` | ⏳ **NEXT TO BUILD** |
+| **20** | **Student Self Check-in Flow** | `/attend` | ⏳ **Pass 2 in progress** |

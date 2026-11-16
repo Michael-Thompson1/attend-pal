@@ -268,7 +268,12 @@ export default function SessionMonitorClientView({
       name: row.student_name,
       indexNumber: row.student_index,
       distanceM: row.distance_m ?? 0,
-      faceMatchScore: row.match_score ?? 100,
+      faceMatchScore:
+        row.match_score == null
+          ? 100
+          : row.match_score <= 1
+            ? Math.round(row.match_score * 100)
+            : Math.round(row.match_score),
       status:
         row.status === "verified" || row.status === "manual"
           ? "verified"

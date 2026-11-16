@@ -146,7 +146,12 @@ export async function getAllAlertsAction(filters?: {
       claimed_index: a.claimed_index,
       student_id: a.student_id,
       distance_m: a.distance_m,
-      match_score: a.match_score,
+      match_score:
+        a.match_score == null
+          ? null
+          : a.match_score <= 1
+            ? Math.round(a.match_score * 100)
+            : Math.round(a.match_score),
       details: detailsStr,
       status: a.status,
       created_at: a.created_at,

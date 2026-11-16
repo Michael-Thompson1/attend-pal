@@ -33,8 +33,8 @@ export const STUDENT_MESSAGES = {
     body: "Your attendance for this session has already been recorded.",
   },
   link_inactive: {
-    heading: "Link no longer active",
-    body: "This check-in link has been closed. Contact your lecturer if you think this is a mistake.",
+    heading: "This link is no longer active",
+    body: "The QR code or session link you opened is expired, invalid, or has been revoked by the instructor.",
   },
   not_on_roster: {
     heading: "Index number not found",

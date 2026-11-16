@@ -1,6 +1,13 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import LinkInactiveView from "@/components/student/link-inactive-view";
+import {
+  AlreadyCheckedIn,
+  CheckInNotOpen,
+  IdentityCheckFailed,
+  OutsideClassArea,
+} from "@/components/student/attend-results";
 import {
   ArrowLeft,
   ArrowRight,
@@ -29,6 +36,15 @@ import {
   X,
 } from "lucide-react";
 
+function readDeviceId() {
+  const key = "attend-pal-device";
+  const existing = window.sessionStorage.getItem(key);
+  if (existing) return existing;
+  const next = crypto.randomUUID().replace(/-/g, "");
+  window.sessionStorage.setItem(key, next);
+  return next;
+}
+
 export type AttendSession = {
   code: string;
   title: string;
@@ -36,6 +52,9 @@ export type AttendSession = {
   venue: string;
   whenLabel: string;
   closesIn: string;
+  windowClock: string;
+  nowClock: string;
+  radiusM: number;
 };
 
 type Step =
@@ -58,19 +77,103 @@ type Step =
 export default function AttendClientView({
   session,
   token,
+  initialStep = "landing",
+  detectedTime,
+  detectedZone,
 }: {
   session: AttendSession;
   token: string;
+  initialStep?: Step;
+  detectedTime: string;
+  detectedZone: string;
 }) {
-  const [step, setStep] = useState<Step>("landing");
+  const [step, setStep] = useState<Step>(initialStep);
   const [indexNumber, setIndexNumber] = useState("");
   const [indexError, setIndexError] = useState<string | null>(null);
   const [humanChecked, setHumanChecked] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [whyOpen, setWhyOpen] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [coords, setCoords] = useState<{ latitude: number; longitude: number; accuracy: number } | null>(null);
+  const [frames, setFrames] = useState<string[]>([]);
+  const [attempt, setAttempt] = useState(0);
+  const [detail, setDetail] = useState<{ distanceM?: number; radiusM?: number; recordedAt?: string; reference?: string }>({});
 
-  function continueFromIndex() {
-    const value = indexNumber.trim().toUpperCase();
+  async function postCheck(body: Record<string, unknown>) {
+    const response = await fetch("/api/attend", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        token,
+        indexNumber: indexNumber.trim(),
+        deviceId: readDeviceId(),
+        ...body,
+      }),
+    });
+    const data = (await response.json()) as {
+      code?: string;
+      distanceM?: number;
+      radiusM?: number;
+      recordedAt?: string;
+      reference?: string;
+    };
+    return {
+      code: data.code ?? "error",
+      distanceM: data.distanceM,
+      radiusM: data.radiusM,
+      recordedAt: data.recordedAt,
+      reference: data.reference,
+    };
+  }
+
+  function applyCode(result: {
+    code: string;
+    distanceM?: number;
+    radiusM?: number;
+    recordedAt?: string;
+    reference?: string;
+  }) {
+    const code = result.code;
+    if (result.distanceM != null || result.recordedAt || result.reference) {
+      setDetail({
+        distanceM: result.distanceM,
+        radiusM: result.radiusM,
+        recordedAt: result.recordedAt,
+        reference: result.reference,
+      });
+    }
+    if (code === "identity") setAttempt((current) => current + 1);
+    if (code === "not_on_list") {
+      setIndexError("We couldn't find that index number in this class.");
+      setStep("index");
+      return;
+    }
+    if (code === "turnstile") {
+      setIndexError("Tap the box to verify attendance.");
+      setStep("index");
+      return;
+    }
+    const screens: Partial<Record<string, Step>> = {
+      closed: "closed",
+      not_open: "not-open",
+      already: "already",
+      bounds: "bounds",
+      imprecise: "imprecise",
+      identity: "identity",
+      flagged: "flagged",
+      verified: "verified",
+    };
+    const next = screens[code];
+    if (!next) {
+      setHelpOpen(true);
+      if (step === "locating") setStep("location");
+      return;
+    }
+    setStep(next);
+  }
+
+  async function continueFromIndex() {
+    const value = indexNumber.trim();
     if (!value) {
       setIndexError("Enter your index number.");
       return;
@@ -79,51 +182,72 @@ export default function AttendClientView({
       setIndexError("Tap the box to verify attendance.");
       return;
     }
-    if (value === "UNKNOWN") {
-      setIndexError("We couldn't find that index number in this class.");
-      return;
-    }
+    setPending(true);
     setIndexError(null);
-    if (value === "CLOSED") {
-      setStep("closed");
-      return;
+    try {
+      const result = await postCheck({ phase: "index" });
+      if (result.code === "ok") setStep("location");
+      else applyCode(result);
+    } catch {
+      setIndexError("Ask your lecturer for help.");
+    } finally {
+      setPending(false);
     }
-    if (value === "EARLY") {
-      setStep("not-open");
-      return;
-    }
-    if (value === "DONE") {
-      setStep("already");
-      return;
-    }
-    setStep("location");
   }
 
   function shareLocation() {
-    const value = indexNumber.trim().toUpperCase();
-    if (value === "BLUR") {
+    if (!navigator.geolocation) {
       setStep("imprecise");
       return;
     }
-    if (value === "FAR") {
-      setStep("bounds");
-      return;
-    }
+    setPending(true);
     setStep("locating");
-    window.setTimeout(() => setStep("located"), 1600);
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const next = {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy,
+        };
+        setCoords(next);
+        try {
+          const result = await postCheck({ phase: "location", ...next });
+          if (result.code === "ok") setStep("located");
+          else applyCode(result);
+        } catch {
+          setStep("imprecise");
+        } finally {
+          setPending(false);
+        }
+      },
+      () => {
+        setPending(false);
+        setStep("imprecise");
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 },
+    );
   }
 
-  function submitSelfie() {
-    const value = indexNumber.trim().toUpperCase();
-    if (value === "NOMATCH") {
+  async function submitSelfie() {
+    if (!coords) {
+      setStep("location");
+      return;
+    }
+    if (frames.length < 3) {
+      setStep("selfie");
+      return;
+    }
+    setPending(true);
+    try {
+      const result = await postCheck({ phase: "submit", ...coords, frames });
+      setFrames([]);
+      applyCode(result);
+    } catch {
+      setFrames([]);
       setStep("identity");
-      return;
+    } finally {
+      setPending(false);
     }
-    if (value === "REVIEW") {
-      setStep("flagged");
-      return;
-    }
-    setStep("verified");
   }
 
   return (
@@ -153,6 +277,7 @@ export default function AttendClientView({
             onBack={() => setStep("landing")}
             onContinue={continueFromIndex}
             onHelp={() => setHelpOpen(true)}
+            pending={pending}
           />
         )}
         {step === "location" && (
@@ -162,6 +287,7 @@ export default function AttendClientView({
             onShare={shareLocation}
             onWhy={() => setWhyOpen(true)}
             onHelp={() => setHelpOpen(true)}
+            pending={pending}
           />
         )}
         {step === "locating" && (
@@ -182,16 +308,21 @@ export default function AttendClientView({
           <SelfieCapture
             session={session}
             onBack={() => setStep("located")}
-            onCapture={() => setStep("review")}
+            onCapture={(shots) => {
+              setFrames(shots);
+              setStep("review");
+            }}
             onHelp={() => setHelpOpen(true)}
           />
         )}
         {step === "review" && (
           <SelfieReview
             session={session}
+            photo={frames[frames.length - 1] ?? ""}
             onRetake={() => setStep("selfie")}
             onUse={submitSelfie}
             onHelp={() => setHelpOpen(true)}
+            pending={pending}
           />
         )}
         {step === "verified" && (
@@ -203,11 +334,11 @@ export default function AttendClientView({
           />
         )}
         {step === "identity" && (
-          <Result
-            title="Identity check failed"
-            body="We couldn't match your photo to the class list. Use a bright room, face the camera, and blink once."
-            actionLabel="Try again"
-            onAction={() => setStep("selfie")}
+          <IdentityCheckFailed
+            session={session}
+            indexNumber={indexNumber}
+            attempt={Math.max(attempt, 1)}
+            onRetry={() => setStep("selfie")}
           />
         )}
         {step === "flagged" && (
@@ -217,11 +348,12 @@ export default function AttendClientView({
           />
         )}
         {step === "bounds" && (
-          <Result
-            title="Out of bounds"
-            body="You need to be inside the class area. Move closer to the room and try again."
-            actionLabel="Try again"
-            onAction={() => setStep("location")}
+          <OutsideClassArea
+            session={session}
+            distanceM={detail.distanceM}
+            radiusM={detail.radiusM}
+            onRetry={() => setStep("location")}
+            onHelp={() => setHelpOpen(true)}
           />
         )}
         {step === "imprecise" && (
@@ -233,21 +365,26 @@ export default function AttendClientView({
           />
         )}
         {step === "not-open" && (
-          <Result
-            title="Check-in isn't open"
-            body={`${session.code} is not taking attendance right now.`}
-          />
+          <CheckInNotOpen session={session} onHome={() => setStep("landing")} onHelp={() => setHelpOpen(true)} />
         )}
         {step === "closed" && (
-          <Result
-            title="Link no longer active"
-            body="Ask your lecturer for a new link or code."
+          <LinkInactiveView
+            venue={session.venue}
+            course={session.code ? `${session.code}${session.title ? ` (${session.title})` : ""}` : ""}
+            sessionId={token ? `#${token.slice(0, 8).toUpperCase()}` : ""}
+            kioskName={session.lecturer ? `${session.lecturer}'s Kiosk` : ""}
+            detectedTime={detectedTime}
+            detectedZone={detectedZone}
           />
         )}
         {step === "already" && (
-          <Result
-            title="Already checked in"
-            body={`You're already marked present for ${session.code}.`}
+          <AlreadyCheckedIn
+            session={session}
+            indexNumber={indexNumber}
+            recordedAt={detail.recordedAt ?? ""}
+            reference={detail.reference ?? ""}
+            onHome={() => setStep("landing")}
+            onHelp={() => setHelpOpen(true)}
           />
         )}
       </div>
@@ -393,6 +530,7 @@ function IndexStep({
   onBack,
   onContinue,
   onHelp,
+  pending,
 }: {
   session: AttendSession;
   value: string;
@@ -403,6 +541,7 @@ function IndexStep({
   onBack: () => void;
   onContinue: () => void;
   onHelp: () => void;
+  pending: boolean;
 }) {
   return (
     <div className="flex flex-1 flex-col px-4 pt-4 pb-6">
@@ -512,24 +651,12 @@ function IndexStep({
         </span>
       </button>
 
-      <div className="mt-6 flex items-center gap-3 rounded-xl bg-surface-container-low p-3">
-        <IdCardArt />
-        <div className="min-w-0 flex-1">
-          <p className="truncate font-label-md text-label-md font-medium text-on-surface">
-            Locate your Index Number
-          </p>
-          <p className="truncate font-caption text-caption text-on-surface-variant">
-            Found directly beneath the campus barcode strip
-          </p>
-        </div>
-        <Info className="h-5 w-5 shrink-0 text-secondary" />
-      </div>
-
       <div className="mt-auto space-y-2 pt-6">
         <button
           type="button"
+          disabled={pending}
           onClick={onContinue}
-          className="inline-flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-primary-container font-label-lg text-label-lg font-semibold text-on-primary shadow-md"
+          className="inline-flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-primary-container font-label-lg text-label-lg font-semibold text-on-primary shadow-md disabled:opacity-60"
         >
           Continue
           <ArrowRight className="h-5 w-5" />
@@ -558,12 +685,14 @@ function LocationPrompt({
   onShare,
   onWhy,
   onHelp,
+  pending,
 }: {
   session: AttendSession;
   onBack: () => void;
   onShare: () => void;
   onWhy: () => void;
   onHelp: () => void;
+  pending: boolean;
 }) {
   return (
     <div className="flex flex-1 flex-col px-4 pt-2 pb-6">
@@ -633,8 +762,9 @@ function LocationPrompt({
 
       <button
         type="button"
+        disabled={pending}
         onClick={onShare}
-        className="mt-4 inline-flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-primary-container font-label-lg text-label-lg font-semibold text-on-primary shadow-md"
+        className="mt-4 inline-flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-primary-container font-label-lg text-label-lg font-semibold text-on-primary shadow-md disabled:opacity-60"
       >
         <MapPin className="h-5 w-5" />
         Allow location
@@ -867,9 +997,65 @@ function SelfieCapture({
 }: {
   session: AttendSession;
   onBack: () => void;
-  onCapture: () => void;
+  onCapture: (frames: string[]) => void;
   onHelp: () => void;
 }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const shots = useRef<string[]>([]);
+  const [ready, setReady] = useState(false);
+  const [blocked, setBlocked] = useState(false);
+  const [facing, setFacing] = useState<"user" | "environment">("user");
+
+  useEffect(() => {
+    let stream: MediaStream | null = null;
+    let timer = 0;
+    let stopped = false;
+    shots.current = [];
+
+    async function start() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: { facingMode: facing, width: { ideal: 640 }, height: { ideal: 800 } },
+        });
+        if (stopped) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        const video = videoRef.current;
+        if (!video) return;
+        video.srcObject = stream;
+        await video.play();
+        if (stopped) {
+          window.clearInterval(timer);
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        timer = window.setInterval(() => {
+          if (video.readyState < 2 || video.videoWidth === 0) return;
+          const canvas = document.createElement("canvas");
+          const scale = 320 / video.videoWidth;
+          canvas.width = 320;
+          canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+          const context = canvas.getContext("2d");
+          if (!context) return;
+          context.drawImage(video, 0, 0, canvas.width, canvas.height);
+          shots.current = [...shots.current, canvas.toDataURL("image/jpeg", 0.7)].slice(-5);
+          if (shots.current.length >= 3) setReady(true);
+        }, 150);
+      } catch {
+        if (!stopped) setBlocked(true);
+      }
+    }
+
+    void start();
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+      stream?.getTracks().forEach((track) => track.stop());
+    };
+  }, [facing]);
+
   return (
     <div className="flex flex-col pb-6">
       <div className="flex flex-col gap-2 px-4 pt-2 pb-3">
@@ -919,8 +1105,9 @@ function SelfieCapture({
               <span className="absolute -top-2 -right-2 h-6 w-6 rounded-tr-lg border-t-2 border-r-2 border-tertiary-fixed-dim" />
               <span className="absolute -bottom-2 -left-2 h-6 w-6 rounded-bl-lg border-b-2 border-l-2 border-tertiary-fixed-dim" />
               <span className="absolute -right-2 -bottom-2 h-6 w-6 rounded-br-lg border-r-2 border-b-2 border-tertiary-fixed-dim" />
-              <div className="flex h-full w-full items-center justify-center rounded-[50%] border-2 border-dashed border-tertiary-fixed/90 text-on-primary/40">
-                <User className="h-24 w-24" />
+              <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-[50%] border-2 border-dashed border-tertiary-fixed/90 bg-black/30 text-on-primary/40">
+                <video ref={videoRef} autoPlay muted playsInline className="h-full w-full object-cover" />
+                {blocked && <User className="absolute h-24 w-24" />}
               </div>
             </div>
             <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-primary-container px-4 py-2 text-on-primary shadow-lg">
@@ -950,8 +1137,9 @@ function SelfieCapture({
             <button
               type="button"
               aria-label="Take verification selfie"
-              onClick={onCapture}
-              className="flex h-20 w-20 items-center justify-center rounded-full bg-primary-container p-1 shadow-md"
+              disabled={!ready}
+              onClick={() => onCapture(shots.current)}
+              className="flex h-20 w-20 items-center justify-center rounded-full bg-primary-container p-1 shadow-md disabled:opacity-50"
             >
               <span className="flex h-full w-full items-center justify-center rounded-full bg-surface-container-lowest">
                 <span className="flex h-14 w-14 items-center justify-center rounded-full bg-primary-container text-on-primary">
@@ -959,13 +1147,22 @@ function SelfieCapture({
                 </span>
               </span>
             </button>
-            <button type="button" aria-label="Switch camera view" className="flex h-12 w-12 items-center justify-center rounded-full bg-surface-container text-on-surface-variant">
+            <button
+              type="button"
+              aria-label="Switch camera view"
+              onClick={() => {
+                shots.current = [];
+                setReady(false);
+                setFacing((current) => (current === "user" ? "environment" : "user"));
+              }}
+              className="flex h-12 w-12 items-center justify-center rounded-full bg-surface-container text-on-surface-variant"
+            >
               <FlipHorizontal2 className="h-5 w-5" />
             </button>
           </div>
           <p className="mt-3 inline-flex items-center gap-1.5 text-center font-caption text-caption font-medium text-on-surface-variant">
             <Lock className="h-3.5 w-3.5 text-error" />
-            Gallery upload disabled for secure kiosk attendance
+            {blocked ? "Allow the camera to take a live photo" : "Gallery upload disabled for secure kiosk attendance"}
           </p>
           <button type="button" onClick={onHelp} className="mt-1 font-label-md text-label-md font-semibold text-primary-container">
             Having trouble? Ask your lecturer for help
@@ -978,14 +1175,18 @@ function SelfieCapture({
 
 function SelfieReview({
   session,
+  photo,
   onRetake,
   onUse,
   onHelp,
+  pending,
 }: {
   session: AttendSession;
+  photo: string;
   onRetake: () => void;
   onUse: () => void;
   onHelp: () => void;
+  pending: boolean;
 }) {
   return (
     <div className="flex flex-col px-4 pt-2 pb-6">
@@ -1021,7 +1222,7 @@ function SelfieReview({
               Terminal Beacon 04
             </span>
             <span className="rounded bg-surface-container-lowest/90 px-1.5 py-0.5 font-mono text-[11px] text-on-surface-variant">
-              99.8% Match
+              Captured
             </span>
           </div>
           <span className="absolute top-2 left-2 h-4 w-4 rounded-tl border-t-2 border-l-2 border-primary-container" />
@@ -1029,8 +1230,14 @@ function SelfieReview({
           <span className="absolute bottom-2 left-2 h-4 w-4 rounded-bl border-b-2 border-l-2 border-primary-container" />
           <span className="absolute right-2 bottom-2 h-4 w-4 rounded-br border-r-2 border-b-2 border-primary-container" />
           <div className="flex h-72 w-52 items-center justify-center rounded-[50%] border-2 border-success bg-success/20 p-1.5">
-            <div className="flex h-full w-full items-center justify-center rounded-[50%] bg-surface-container text-primary">
-              <User className="h-24 w-24" />
+            <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-[50%] bg-surface-container text-primary">
+              {photo ? (
+                // The capture is a short-lived data URL from the camera, not a remote host.
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={photo} alt="Your verification selfie" className="h-full w-full object-cover" />
+              ) : (
+                <User className="h-24 w-24" />
+              )}
             </div>
           </div>
           <div className="absolute -bottom-1 z-20 inline-flex items-center gap-1 rounded-full bg-success px-3 py-1 font-caption text-[11px] font-semibold tracking-wide text-on-primary uppercase shadow-md">
@@ -1044,12 +1251,12 @@ function SelfieReview({
               <BadgeCheck className="h-5 w-5" />
             </div>
             <div>
-              <p className="font-label-md text-label-md font-semibold">Face &amp; Liveness Verified</p>
-              <p className="font-caption text-caption text-on-surface-variant">Biometric hash calculated · Ready</p>
+              <p className="font-label-md text-label-md font-semibold">Face &amp; Liveness Captured</p>
+              <p className="font-caption text-caption text-on-surface-variant">Blink frames ready to submit</p>
             </div>
           </div>
           <span className="rounded-full bg-success-container px-2 py-0.5 font-label-md text-label-md font-bold text-success">
-            Pass
+            Ready
           </span>
         </div>
         <p className="mt-2 inline-flex items-center gap-1.5 font-caption text-caption text-on-surface-variant">
@@ -1069,8 +1276,9 @@ function SelfieReview({
         </button>
         <button
           type="button"
+          disabled={pending}
           onClick={onUse}
-          className="inline-flex h-14 flex-[1.4] items-center justify-center gap-2 rounded-xl bg-primary-container font-label-lg text-label-lg font-semibold text-on-primary shadow-md"
+          className="inline-flex h-14 flex-[1.4] items-center justify-center gap-2 rounded-xl bg-primary-container font-label-lg text-label-lg font-semibold text-on-primary shadow-md disabled:opacity-60"
         >
           Submit Attendance
           <Send className="h-5 w-5" />
@@ -1489,18 +1697,6 @@ function Tip({ icon: Icon, label }: { icon: typeof Sun; label: string }) {
     <div className="flex min-w-0 flex-1 items-center justify-center gap-1 rounded-full bg-surface-container-low px-2 py-1.5 shadow-sm">
       <Icon className="h-4 w-4 shrink-0 text-primary-container" />
       <span className="truncate font-caption text-caption font-medium text-on-surface-variant">{label}</span>
-    </div>
-  );
-}
-
-function IdCardArt() {
-  return (
-    <div className="flex h-12 w-12 shrink-0 flex-col justify-between rounded-lg bg-primary-container p-1.5 text-on-primary shadow-sm">
-      <div className="h-4 w-4 rounded-sm bg-on-primary/80" />
-      <div className="space-y-0.5">
-        <div className="h-0.5 w-full bg-on-primary/70" />
-        <div className="h-0.5 w-2/3 bg-on-primary/70" />
-      </div>
     </div>
   );
 }

@@ -1,16 +1,8 @@
 import AttendClientView from "@/components/student/attend-client-view";
+import { detectedAtLabel, loadAttendView } from "@/lib/attend/check-in";
 
 export const metadata = {
   title: "Check in · Attend Pal",
-};
-
-const SAMPLE_SESSION = {
-  code: "INF212",
-  title: "Algorithms",
-  lecturer: "Dr. Mensah",
-  venue: "Lecture Hall B",
-  whenLabel: "Today, 24 Oct · 10:00 AM – 11:30 AM",
-  closesIn: "12:34",
 };
 
 export default async function AttendTokenPage({
@@ -19,6 +11,16 @@ export default async function AttendTokenPage({
   params: Promise<{ token: string }>;
 }) {
   const { token } = await params;
+  const view = await loadAttendView(token);
+  const detected = detectedAtLabel();
 
-  return <AttendClientView session={SAMPLE_SESSION} token={token} />;
+  return (
+    <AttendClientView
+      session={view.session}
+      token={token}
+      initialStep={view.step}
+      detectedTime={detected.time}
+      detectedZone={detected.zone}
+    />
+  );
 }
