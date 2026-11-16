@@ -40,6 +40,11 @@
   --color-on-tertiary:               #ffffff;
   --color-tertiary-fixed:            #89f5e7;
   --color-tertiary-fixed-dim:        #6bd8cb;
+  --color-success:                   #16a34a;
+  --color-success-container:         #dcfce7;
+  --color-warning:                   #d97706;
+  --color-warning-container:         #fffbeb;
+  --color-on-warning-container:      #78350f;
 
   --color-on-error:                  #ffffff;
 
