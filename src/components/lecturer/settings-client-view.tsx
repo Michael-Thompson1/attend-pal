@@ -24,7 +24,6 @@ import {
   MapPin,
   Landmark,
   Save,
-  Search,
   Settings,
   Shield,
   SlidersHorizontal,
@@ -33,6 +32,7 @@ import {
   X,
 } from "lucide-react";
 import { signOutAction } from "@/app/auth/actions";
+import HeaderSearch from "@/components/lecturer/header-search";
 import {
   changePasswordAction,
   downloadMyDataAction,
@@ -209,7 +209,7 @@ export default function SettingsClientView({ data }: { data: SettingsViewData })
             <nav className="flex flex-col gap-1">
               <NavLink href="/dashboard" icon={LayoutGrid} label="Dashboard" />
               <NavLink href="/classes" icon={BookOpen} label="Classes" />
-              <NavLink href="/sessions/new" icon={Clock} label="Sessions" />
+              <NavLink href="/sessions" icon={Clock} label="Sessions" />
               <Link
                 href="/alerts"
                 className="flex items-center justify-between rounded-xl px-4 py-2.5 font-label-lg text-label-md font-medium text-on-surface-variant transition-all hover:bg-surface-container-high hover:text-on-surface"
@@ -281,14 +281,7 @@ export default function SettingsClientView({ data }: { data: SettingsViewData })
 
       <div className="flex min-w-0 flex-1 flex-col md:pl-72">
         <header className="fixed top-0 right-0 left-0 z-40 flex h-16 items-center justify-between border-b border-surface-container-high bg-surface-container-lowest/90 px-6 backdrop-blur-xl md:left-72 lg:px-10">
-          <div className="relative w-72 sm:w-96">
-            <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-outline" />
-            <input
-              type="search"
-              placeholder="Search students, courses, or sessions..."
-              className="h-10 w-full rounded-xl bg-surface-container-low pr-4 pl-10 font-body-md text-label-md text-on-surface placeholder:text-outline focus:ring-2 focus:ring-primary/20 focus:outline-none"
-            />
-          </div>
+          <HeaderSearch />
           <div className="flex items-center gap-4">
             <Link
               href="/alerts"

@@ -39,6 +39,7 @@ import type {
   ClassReportData,
 } from "@/app/(lecturer)/reports/actions";
 import { getClassReportDataAction } from "@/app/(lecturer)/reports/actions";
+import HeaderSearch from "@/components/lecturer/header-search";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -62,121 +63,15 @@ interface ReportsClientViewProps {
 
 // ─── Initial Demo Data ──────────────────────────────────────────────────────
 
-const DEMO_CLASSES: ClassOption[] = [
-  { id: "demo-inf212", code: "INF212", title: "Data Structures & Algorithms" },
-  { id: "demo-inf204", code: "INF204", title: "Object Oriented Programming" },
-  { id: "demo-cs311", code: "CS311", title: "Database Systems II" },
-  { id: "demo-mth221", code: "MTH221", title: "Discrete Mathematics" },
-];
-
-const DEMO_STUDENTS: StudentReportItem[] = [
-  {
-    id: "1",
-    indexNumber: "10928371",
-    name: "Amina Abubakar",
-    email: "amina.abubakar@campus.edu",
-    program: "BSc CS • L200",
-    sessionsAttended: 13,
-    totalSessions: 14,
-    attendanceRate: 92.8,
-    category: "exemplary",
-    statusBadge: "eligible",
-  },
-  {
-    id: "2",
-    indexNumber: "10924419",
-    name: "Daniel Osei",
-    email: "daniel.osei@campus.edu",
-    program: "BSc CS • L200",
-    sessionsAttended: 8,
-    totalSessions: 14,
-    attendanceRate: 57.1,
-    category: "at-risk",
-    statusBadge: "barred",
-  },
-  {
-    id: "3",
-    indexNumber: "10931205",
-    name: "Sarah Appiah",
-    email: "sarah.appiah@campus.edu",
-    program: "BSc CS • L200",
-    sessionsAttended: 9,
-    totalSessions: 14,
-    attendanceRate: 64.3,
-    category: "at-risk",
-    statusBadge: "at-risk",
-  },
-  {
-    id: "4",
-    indexNumber: "10925582",
-    name: "Kofi Boateng",
-    email: "kofi.boateng@campus.edu",
-    program: "BSc CS • L200",
-    sessionsAttended: 10,
-    totalSessions: 14,
-    attendanceRate: 71.4,
-    category: "at-risk",
-    statusBadge: "at-risk",
-  },
-  {
-    id: "5",
-    indexNumber: "10926830",
-    name: "Emmanuel Quaye",
-    email: "emmanuel.quaye@campus.edu",
-    program: "BSc CS • L200",
-    sessionsAttended: 11,
-    totalSessions: 14,
-    attendanceRate: 78.6,
-    category: "satisfactory",
-    statusBadge: "eligible",
-  },
-  {
-    id: "6",
-    indexNumber: "10927891",
-    name: "Benedicta Mensah",
-    email: "b.mensah@campus.edu",
-    program: "BSc CS • L200",
-    sessionsAttended: 14,
-    totalSessions: 14,
-    attendanceRate: 100.0,
-    category: "exemplary",
-    statusBadge: "perfect",
-  },
-  {
-    id: "7",
-    indexNumber: "10923098",
-    name: "Michael Addo",
-    email: "m.addo@campus.edu",
-    program: "BSc CS • L200",
-    sessionsAttended: 12,
-    totalSessions: 14,
-    attendanceRate: 85.7,
-    category: "satisfactory",
-    statusBadge: "eligible",
-  },
-  {
-    id: "8",
-    indexNumber: "10929944",
-    name: "Naa Ayorkor Tagoe",
-    email: "naa.tagoe@campus.edu",
-    program: "BSc CS • L200",
-    sessionsAttended: 13,
-    totalSessions: 14,
-    attendanceRate: 92.8,
-    category: "exemplary",
-    statusBadge: "eligible",
-  },
-];
-
 export default function ReportsClientView({
   classes: initialClasses = [],
   initialReportData = null,
 }: ReportsClientViewProps) {
-  const isDemo = initialClasses.length === 0 || !initialReportData;
-  const availableClasses = isDemo ? DEMO_CLASSES : initialClasses;
+  const isDemo = false;
+  const availableClasses = initialClasses;
 
   const [selectedClassId, setSelectedClassId] = useState<string>(
-    initialReportData?.classId || availableClasses[0]?.id || "demo-inf212"
+    initialReportData?.classId || availableClasses[0]?.id || ""
   );
   const [reportData, setReportData] = useState<ClassReportData | null>(
     initialReportData
@@ -192,27 +87,24 @@ export default function ReportsClientView({
 
   // Determine current active student roster and metrics
   const students: StudentReportItem[] = useMemo(() => {
-    if (reportData && reportData.studentRoster.length > 0) {
-      return reportData.studentRoster;
-    }
-    return DEMO_STUDENTS;
+    return reportData?.studentRoster ?? [];
   }, [reportData]);
 
   const activeCourseCode =
     reportData?.classCode ||
     availableClasses.find((c) => c.id === selectedClassId)?.code ||
-    "INF212";
+    "—";
 
   const activeCourseTitle =
     reportData?.classTitle ||
     availableClasses.find((c) => c.id === selectedClassId)?.title ||
-    "Data Structures & Algorithms";
+    "No class selected";
 
-  const averageAttendance = reportData?.averageAttendanceRate ?? 87.4;
-  const totalSessionsHeld = reportData?.totalSessionsHeld ?? 14;
+  const averageAttendance = reportData?.averageAttendanceRate ?? 0;
+  const totalSessionsHeld = reportData?.totalSessionsHeld ?? 0;
   const enrolledCount = reportData?.enrolledStudentsCount ?? students.length;
   const atRiskCount = reportData?.atRiskCount ?? students.filter((s) => s.category === "at-risk").length;
-  const biometricRate = reportData?.biometricVerificationRate ?? 98.1;
+  const biometricRate = reportData?.biometricVerificationRate ?? 0;
 
   // Filter students based on activeTab and searchQuery
   const filteredStudents = useMemo(() => {
@@ -388,23 +280,17 @@ export default function ReportsClientView({
         {/* Top Header */}
         <header className="fixed top-0 left-64 right-0 h-16 bg-surface-container-lowest/90 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)] z-40 px-space-lg flex items-center justify-between">
           <div className="flex-1 max-w-md">
-            <div className="relative flex items-center w-full">
-              <Search className="text-secondary absolute left-3 pointer-events-none w-5 h-5" />
-              <input
-                type="search"
-                placeholder="Search students, course codes, sessions..."
-                className="w-full h-10 pl-10 pr-4 bg-surface-container-low text-on-surface font-body-md text-body-md rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:bg-surface-container-lowest transition-all placeholder:text-secondary"
-              />
-            </div>
+            <HeaderSearch variant="compact" />
           </div>
           <div className="flex items-center gap-space-md">
-            <button
-              type="button"
+            <Link
+              href="/alerts"
+              aria-label="Notifications"
               className="relative w-10 h-10 rounded-xl flex items-center justify-center text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-all"
             >
               <Bell className="w-5 h-5" />
               <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-error ring-2 ring-surface-container-lowest" />
-            </button>
+            </Link>
             <div className="h-8 w-px bg-surface-container-high" />
             <div className="flex items-center gap-space-sm pl-space-xs">
               <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">

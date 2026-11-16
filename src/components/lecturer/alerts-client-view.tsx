@@ -9,7 +9,6 @@ import {
   BellRing,
   BarChart2,
   Settings,
-  Search,
   Bell,
   User,
   Building2,
@@ -36,6 +35,7 @@ import {
   ArrowUpDown,
 } from "lucide-react";
 import type { AlertRow } from "@/app/(lecturer)/alerts/actions";
+import HeaderSearch from "@/components/lecturer/header-search";
 import {
   markAlertReviewedAction,
   dismissAlertFromCentreAction,
@@ -144,123 +144,6 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-// ─── Demo fallback data for empty state ─────────────────────────────────────
-
-const DEMO_ALERTS: AlertRow[] = [
-  {
-    id: "demo-1",
-    session_id: "demo",
-    type: "fake_identity",
-    severity: "high",
-    claimed_index: "20231045",
-    student_id: null,
-    distance_m: null,
-    match_score: 18,
-    details: "Static 2D image — liveness 0.04",
-    status: "inspecting",
-    created_at: new Date(Date.now() - 8 * 60 * 1000).toISOString(),
-    student_name: "Daniel Osei",
-    student_index: "20231045",
-    session_code: "INF212",
-    session_title: "Lecture 14: Binary Search Trees",
-    venue_name: "Lecture Hall B",
-  },
-  {
-    id: "demo-2",
-    session_id: "demo",
-    type: "out_of_bounds",
-    severity: "medium",
-    claimed_index: "20238819",
-    student_id: null,
-    distance_m: 340,
-    match_score: null,
-    details: "GPS reading 340 m from beacon",
-    status: "new",
-    created_at: new Date(Date.now() - 4 * 60 * 1000).toISOString(),
-    student_name: "Ama Mensah",
-    student_index: "20238819",
-    session_code: "INF212",
-    session_title: "Lecture 14: Binary Search Trees",
-    venue_name: "Lecture Hall B",
-  },
-  {
-    id: "demo-3",
-    session_id: "demo",
-    type: "device_reuse",
-    severity: "high",
-    claimed_index: "20237741",
-    student_id: null,
-    distance_m: null,
-    match_score: null,
-    details: "3 indices from same device fingerprint in 45s",
-    status: "new",
-    created_at: new Date(Date.now() - 12 * 60 * 1000).toISOString(),
-    student_name: "Yaw Asamoah",
-    student_index: "20237741",
-    session_code: "INF212",
-    session_title: "Lecture 14: Binary Search Trees",
-    venue_name: "Lecture Hall B",
-  },
-  {
-    id: "demo-4",
-    session_id: "demo",
-    type: "liveness_fail",
-    severity: "high",
-    claimed_index: "20230912",
-    student_id: null,
-    distance_m: null,
-    match_score: null,
-    details: "Screen replay artifact detected",
-    status: "reviewed",
-    created_at: new Date(Date.now() - 16 * 60 * 1000).toISOString(),
-    student_name: "Kofi Boateng",
-    student_index: "20230912",
-    session_code: "INF212",
-    session_title: "Lecture 14: Binary Search Trees",
-    venue_name: "Lecture Hall B",
-  },
-  {
-    id: "demo-5",
-    session_id: "demo",
-    type: "out_of_bounds",
-    severity: "medium",
-    claimed_index: "20235411",
-    student_id: null,
-    distance_m: 820,
-    match_score: null,
-    details: null,
-    status: "dismissed",
-    created_at: new Date(Date.now() - 20 * 60 * 1000).toISOString(),
-    student_name: "Grace Adjei",
-    student_index: "20235411",
-    session_code: "INF212",
-    session_title: "Lecture 14: Binary Search Trees",
-    venue_name: "Lecture Hall B",
-  },
-  {
-    id: "demo-6",
-    session_id: "demo",
-    type: "window_cutoff",
-    severity: "low",
-    claimed_index: "20234190",
-    student_id: null,
-    distance_m: null,
-    match_score: null,
-    details: "Checked in 18 minutes after window closed",
-    status: "reviewed",
-    created_at: new Date(Date.now() - 24 * 60 * 1000).toISOString(),
-    student_name: "Emmanuel Appiah",
-    student_index: "20234190",
-    session_code: "INF212",
-    session_title: "Lecture 14: Binary Search Trees",
-    venue_name: "Lecture Hall B",
-  },
-];
-
-const DEMO_SESSIONS: SessionOption[] = [
-  { id: "demo", code: "INF212", title: "Lecture 14: Binary Search Trees", status: "open" },
-];
-
 // ─── Filter chip config ──────────────────────────────────────────────────────
 
 const FILTER_CHIPS = [
@@ -281,10 +164,9 @@ export default function AlertsClientView({
   initialAlerts,
   sessionOptions,
 }: AlertsClientViewProps) {
-  // Use demo data when Supabase returns nothing (no active sessions yet)
-  const isDemo = initialAlerts.length === 0;
-  const alertSource = isDemo ? DEMO_ALERTS : initialAlerts;
-  const sessionSource = isDemo ? DEMO_SESSIONS : sessionOptions;
+  const isDemo = false;
+  const alertSource = initialAlerts;
+  const sessionSource = sessionOptions;
 
   const [alerts, setAlerts] = useState<AlertRow[]>(alertSource);
   const [selectedAlert, setSelectedAlert] = useState<AlertRow | null>(
@@ -456,25 +338,19 @@ export default function AlertsClientView({
         {/* ── Header ── */}
         <header className="fixed top-0 left-64 right-0 h-16 bg-surface-container-lowest/90 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)] z-40 px-space-lg flex items-center justify-between">
           <div className="flex-1 max-w-md">
-            <div className="relative flex items-center w-full">
-              <Search className="text-secondary absolute left-3 pointer-events-none w-5 h-5" />
-              <input
-                type="search"
-                placeholder="Search students, course codes, sessions..."
-                className="w-full h-10 pl-10 pr-4 bg-surface-container-low text-on-surface font-body-md text-body-md rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:bg-surface-container-lowest transition-all placeholder:text-secondary"
-              />
-            </div>
+            <HeaderSearch variant="compact" />
           </div>
           <div className="flex items-center gap-space-md">
-            <button
-              type="button"
+            <Link
+              href="/alerts"
+              aria-label="Notifications"
               className="relative w-10 h-10 rounded-xl flex items-center justify-center text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-all"
             >
               <Bell className="w-5 h-5" />
               {unresolvedCount > 0 && (
                 <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-error ring-2 ring-surface-container-lowest" />
               )}
-            </button>
+            </Link>
             <div className="h-8 w-px bg-surface-container-high" />
             <div className="flex items-center gap-space-sm pl-space-xs">
               <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">

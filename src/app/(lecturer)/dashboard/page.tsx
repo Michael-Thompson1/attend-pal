@@ -10,7 +10,6 @@ import {
   BarChart3,
   Settings,
   MapPin,
-  Search,
   User,
   Download,
   Plus,
@@ -19,7 +18,6 @@ import {
   CheckCircle2,
   AlertTriangle,
   TrendingUp,
-  ArrowUp,
   Radio,
   Monitor,
   ChevronRight,
@@ -29,13 +27,11 @@ import {
   Smartphone,
   Info,
   DoorClosed,
-  CheckCheck,
-  Check,
-  Pencil,
   LogOut,
   Sparkles,
 } from "lucide-react";
 import { signOutAction } from "@/app/auth/actions";
+import HeaderSearch from "@/components/lecturer/header-search";
 
 interface JoinedClass {
   code: string;
@@ -67,7 +63,12 @@ interface AlertRow {
   created_at: string;
 }
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ filter?: string }>;
+}) {
+  const { filter } = await searchParams;
   const supabase = await createClient();
 
   const {
@@ -129,52 +130,91 @@ export default async function DashboardPage() {
   const alerts = (rawAlerts as unknown as AlertRow[]) || [];
   const openAlertsCount = alerts.filter((a) => a.status === "new").length;
 
-  // Determine if this is a newly created account with 0 sessions
-  const hasLiveSessions = sessions.length > 0;
+  const now = new Date().getTime();
+  const todayKey = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Accra" }).format(new Date());
+  const dayKey = (iso: string) =>
+    new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Accra" }).format(new Date(iso));
+  const clock = (iso: string) =>
+    new Date(iso).toLocaleTimeString("en-GB", {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "Africa/Accra",
+    });
 
-  // Active session detection
-  const liveSession = sessions.find((s) => s.status === "open");
+  const liveSession =
+    sessions.find(
+      (session) =>
+        session.status === "open" &&
+        new Date(session.starts_at).getTime() <= now &&
+        new Date(session.ends_at).getTime() > now,
+    ) ?? null;
+  const todaysCount = sessions.filter((session) => dayKey(session.starts_at) === todayKey).length;
+  const upcomingCount = sessions.filter(
+    (session) => session.status === "open" && new Date(session.starts_at).getTime() > now,
+  ).length;
 
-  // Fallback demo data for look & feel demonstration
-  const demoActiveSession = {
-    code: "INF212",
-    title: "Data Structures & Algorithms",
-    venue: "Lecture Hall B",
-    radius_m: 25,
-    remainingText: "18 mins remaining (Closes 10:30 AM)",
-    kioskName: "Stationary Kiosk Terminal • Hall B Front Door",
-    terminalId: "Terminal #K-04",
-    totalEnrolled: 52,
-    checkedIn: 38,
-    quorumPercent: 73,
-    verified: 38,
-    flagged: 2,
-    awaiting: 12,
-  };
+  const verifiedBySession = new Map<string, number>();
+  const enrolledByClass = new Map<string, number>();
+  const sessionIds = sessions.map((session) => session.id);
+  const classIds = [...new Set(sessions.map((session) => session.class_id))];
 
-  const activeDisplay = liveSession
-    ? {
-        code: liveSession.classes?.code || "COURSE",
-        title: liveSession.title || liveSession.classes?.title || "Active Session",
-        venue: liveSession.venue_name || "Lecture Hall B",
-        radius_m: liveSession.radius_m || 50,
-        remainingText: `Closes at ${new Date(liveSession.ends_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`,
-        kioskName: "Stationary Kiosk Terminal • Active Session",
-        terminalId: "Terminal #Live-01",
-        totalEnrolled: 50,
-        checkedIn: 0,
-        quorumPercent: 0,
-        verified: 0,
-        flagged: 0,
-        awaiting: 50,
-      }
-    : demoActiveSession;
+  if (sessionIds.length > 0) {
+    const { data: present } = await supabase
+      .from("attendance")
+      .select("session_id")
+      .in("session_id", sessionIds)
+      .eq("status", "verified");
+    for (const row of present ?? []) {
+      const id = row.session_id as string;
+      verifiedBySession.set(id, (verifiedBySession.get(id) ?? 0) + 1);
+    }
+  }
 
-  // Circular ring calculations (r = 40, circumference = 251.2)
+  if (classIds.length > 0) {
+    const { data: roster } = await supabase.from("students").select("class_id").in("class_id", classIds);
+    for (const row of roster ?? []) {
+      const id = row.class_id as string;
+      enrolledByClass.set(id, (enrolledByClass.get(id) ?? 0) + 1);
+    }
+  }
+
+  const verifiedTotal = [...verifiedBySession.values()].reduce((sum, count) => sum + count, 0);
+  const percents = sessions.flatMap((session) => {
+    const enrolled = enrolledByClass.get(session.class_id) ?? 0;
+    if (enrolled === 0) return [];
+    return [((verifiedBySession.get(session.id) ?? 0) / enrolled) * 100];
+  });
+  const averageAttendance = percents.length
+    ? `${(percents.reduce((sum, value) => sum + value, 0) / percents.length).toFixed(1)}%`
+    : "—";
+
+  const enrolledLive = liveSession ? (enrolledByClass.get(liveSession.class_id) ?? 0) : 0;
+  const checkedLive = liveSession ? (verifiedBySession.get(liveSession.id) ?? 0) : 0;
+  const quorumPercent = enrolledLive > 0 ? Math.round((checkedLive / enrolledLive) * 100) : 0;
+  const awaitingLive = Math.max(0, enrolledLive - checkedLive);
+
+  function phaseOf(session: SessionRow) {
+    if (session.status === "closed" || new Date(session.ends_at).getTime() < now) return "completed";
+    if (new Date(session.starts_at).getTime() > now) return "upcoming";
+    return "live";
+  }
+
+  const visibleSessions = sessions.filter((session) => {
+    if (filter === "upcoming") return phaseOf(session) === "upcoming";
+    if (filter === "completed") return phaseOf(session) === "completed";
+    return true;
+  });
+
   const ringCircumference = 251.2;
-  const quorumDashoffset = (
-    ringCircumference * (1 - activeDisplay.quorumPercent / 100)
-  ).toFixed(1);
+  const quorumDashoffset = (ringCircumference * (1 - quorumPercent / 100)).toFixed(1);
+
+  function alertCopy(type: string) {
+    if (type === "out_of_bounds") return { label: "Out of bounds", Icon: MapPinOff };
+    if (type === "multi_index_device") return { label: "Multiple device signature", Icon: Smartphone };
+    if (type === "window_cutoff") return { label: "Window cutoff check-in", Icon: Clock };
+    if (type === "low_match") return { label: "Face match needs review", Icon: AlertTriangle };
+    return { label: "Fake identity attempt", Icon: UserX };
+  }
 
   return (
     <div className="flex min-h-screen bg-surface">
@@ -237,9 +277,11 @@ export default async function DashboardPage() {
                   <Bell className="h-5 w-5" />
                   <span>Alerts</span>
                 </div>
-                <span className="px-2 py-0.5 rounded-full bg-error-container text-on-error-container font-caption text-caption font-bold">
-                  {hasLiveSessions ? openAlertsCount : 3}
-                </span>
+                {openAlertsCount > 0 && (
+                  <span className="px-2 py-0.5 rounded-full bg-error-container text-on-error-container font-caption text-caption font-bold">
+                    {openAlertsCount}
+                  </span>
+                )}
               </Link>
 
               <Link
@@ -314,15 +356,7 @@ export default async function DashboardPage() {
       <div className="flex-1 md:pl-72 flex flex-col min-w-0">
         {/* Top Header */}
         <header className="fixed top-0 left-0 md:left-72 right-0 h-16 bg-surface-container-lowest/90 backdrop-blur-xl border-b border-surface-container-high z-40 flex items-center justify-between px-6 lg:px-10">
-          {/* Search bar */}
-          <div className="relative w-72 sm:w-96">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-outline" />
-            <input
-              type="search"
-              placeholder="Search students, courses, or sessions..."
-              className="w-full h-10 pl-10 pr-4 rounded-xl bg-surface-container-low text-on-surface placeholder:text-outline font-body-md text-label-md border-0 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
-            />
-          </div>
+          <HeaderSearch />
 
           {/* Header Right Actions */}
           <div className="flex items-center gap-4">
@@ -335,7 +369,9 @@ export default async function DashboardPage() {
               >
                 <Bell className="h-5 w-5" />
               </Link>
-              <span className="absolute top-2 right-2 w-2.5 h-2.5 rounded-full bg-error ring-2 ring-surface-container-lowest"></span>
+              {openAlertsCount > 0 && (
+                <span className="absolute top-2 right-2 w-2.5 h-2.5 rounded-full bg-error ring-2 ring-surface-container-lowest"></span>
+              )}
             </div>
 
             <div className="h-8 w-[1px] bg-surface-container-high hidden sm:block"></div>
@@ -360,7 +396,7 @@ export default async function DashboardPage() {
         {/* ── Main Content Dashboard ── */}
         <main className="w-full pt-20 px-6 lg:px-10 pb-12 flex flex-col gap-6">
           {/* Welcome Banner for Newly Registered Accounts */}
-          {!hasLiveSessions && (
+          {sessions.length === 0 && (
             <div className="rounded-2xl bg-primary-fixed/30 border border-primary-fixed-dim/60 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="flex items-start gap-3">
                 <div className="p-2 rounded-xl bg-primary-container text-on-primary flex-shrink-0 mt-0.5">
@@ -371,7 +407,7 @@ export default async function DashboardPage() {
                     Welcome to Attend Pal, {firstName}!
                   </h3>
                   <p className="font-body-md text-secondary text-label-md mt-0.5">
-                    Your account is verified at {institutionName}. Below is a demonstration of your live roll-call and telemetry dashboard. Set up your course rosters to start conducting real sessions.
+                    Your account is verified at {institutionName}. Set up a class, then start a session when the lecture begins.
                   </p>
                 </div>
               </div>
@@ -436,12 +472,13 @@ export default async function DashboardPage() {
               </div>
               <div className="flex flex-col">
                 <span className="font-display-lg text-display-lg text-on-surface font-bold">
-                  {hasLiveSessions ? sessions.length : 3}
+                  {todaysCount}
                 </span>
                 <div className="flex items-center gap-1.5 mt-1 text-secondary font-caption text-caption">
                   <span className="w-2 h-2 rounded-full bg-tertiary-fixed-dim"></span>
                   <span>
-                    {liveSession ? "1 active now" : "1 active now, 2 upcoming"}
+                    {liveSession ? "1 active now" : "None active now"}
+                    {upcomingCount > 0 ? `, ${upcomingCount} upcoming` : ""}
                   </span>
                 </div>
               </div>
@@ -459,11 +496,11 @@ export default async function DashboardPage() {
               </div>
               <div className="flex flex-col">
                 <span className="font-display-lg text-display-lg text-on-surface font-bold">
-                  {hasLiveSessions ? activeDisplay.verified : 142}
+                  {verifiedTotal}
                 </span>
                 <div className="flex items-center gap-1.5 mt-1 text-tertiary-container font-caption text-caption font-medium">
                   <CheckCircle2 className="h-4 w-4" />
-                  <span>Across 2 completed &amp; live courses</span>
+                  <span>Verified check-ins on your recent sessions</span>
                 </div>
               </div>
             </div>
@@ -481,14 +518,16 @@ export default async function DashboardPage() {
               <div className="flex flex-col">
                 <div className="flex items-baseline gap-2">
                   <span className="font-display-lg text-display-lg text-error font-bold">
-                    {hasLiveSessions ? openAlertsCount : 4}
+                    {openAlertsCount}
                   </span>
-                  <span className="px-2 py-0.5 rounded-full bg-error text-on-error font-caption text-caption font-semibold">
-                    Requires Action
-                  </span>
+                  {openAlertsCount > 0 && (
+                    <span className="px-2 py-0.5 rounded-full bg-error text-on-error font-caption text-caption font-semibold">
+                      Requires Action
+                    </span>
+                  )}
                 </div>
                 <span className="font-caption text-caption text-on-secondary-fixed-variant mt-1">
-                  2 biometric mismatches, 2 out-of-bounds
+                  {openAlertsCount === 0 ? "No alerts waiting for review" : "Open the alerts centre to review them"}
                 </span>
               </div>
             </div>
@@ -506,15 +545,11 @@ export default async function DashboardPage() {
               <div className="flex flex-col">
                 <div className="flex items-center gap-2">
                   <span className="font-display-lg text-display-lg text-on-surface font-bold">
-                    94.2%
-                  </span>
-                  <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-tertiary-container/15 text-tertiary-container font-caption text-caption font-semibold">
-                    <ArrowUp className="h-3.5 w-3.5" />
-                    +3.1%
+                    {averageAttendance}
                   </span>
                 </div>
                 <span className="font-caption text-caption text-secondary mt-1">
-                  vs. departmental baseline (91.1%)
+                  Verified students divided by class size
                 </span>
               </div>
             </div>
@@ -522,7 +557,7 @@ export default async function DashboardPage() {
 
           {/* ── Middle Section: Live Session Card & Recent Alerts ── */}
           <section className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* Left Column: Live Session Card (7 cols) */}
+            {liveSession ? (
             <div className="lg:col-span-7 bg-surface-container-lowest rounded-2xl p-6 shadow-sm border border-surface-container-high flex flex-col justify-between gap-6">
               <div className="flex flex-col gap-4">
                 {/* Top Status Bar */}
@@ -542,23 +577,23 @@ export default async function DashboardPage() {
 
                   <span className="inline-flex items-center gap-1.5 text-secondary font-caption text-caption bg-surface-container-low px-2.5 py-1 rounded-full border border-surface-container-high">
                     <Radio className="h-3.5 w-3.5 text-tertiary-container" />
-                    {activeDisplay.terminalId}
+                    Closes {clock(liveSession.ends_at)}
                   </span>
                 </div>
 
                 {/* Course Meta */}
                 <div className="flex flex-col gap-1.5">
                   <h2 className="font-headline-sm text-headline-sm font-bold text-on-surface">
-                    {activeDisplay.code} • {activeDisplay.title}
+                    {liveSession.classes?.code || "Class"} • {liveSession.title}
                   </h2>
                   <div className="flex flex-wrap items-center gap-2 text-secondary font-caption text-caption">
                     <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-surface-container font-medium text-on-surface">
                       <MapPin className="h-3.5 w-3.5 text-primary" />
-                      {activeDisplay.venue} (Geo-fence active ±{activeDisplay.radius_m}m)
+                      {liveSession.venue_name || "Classroom"} (Geo-fence active ±{liveSession.radius_m}m)
                     </span>
                     <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-surface-container-low">
                       <Clock className="h-3.5 w-3.5" />
-                      {activeDisplay.remainingText}
+                      {clock(liveSession.starts_at)} – {clock(liveSession.ends_at)}
                     </span>
                   </div>
                 </div>
@@ -595,7 +630,7 @@ export default async function DashboardPage() {
                     </svg>
                     <div className="absolute flex flex-col items-center justify-center text-center">
                       <span className="font-title-lg text-title-lg text-on-surface font-bold leading-none">
-                        {activeDisplay.quorumPercent}%
+                        {quorumPercent}%
                       </span>
                       <span className="font-caption text-caption text-secondary uppercase text-[10px] mt-0.5 font-semibold">
                         Quorum
@@ -607,11 +642,11 @@ export default async function DashboardPage() {
                   <div className="flex flex-col flex-1 w-full gap-2">
                     <div className="flex items-center justify-between">
                       <span className="font-title-md text-title-md text-on-surface font-semibold">
-                        {activeDisplay.checkedIn} / {activeDisplay.totalEnrolled} Checked In
+                        {checkedLive} / {enrolledLive} Checked In
                       </span>
                       <span className="font-caption text-caption text-tertiary-container font-semibold inline-flex items-center gap-1">
                         <CheckCircle2 className="h-4 w-4" />
-                        Quorum reached
+                        {quorumPercent >= 50 ? "Quorum reached" : "Still checking in"}
                       </span>
                     </div>
 
@@ -619,7 +654,7 @@ export default async function DashboardPage() {
                     <div className="w-full h-2 rounded-full bg-surface-container-high overflow-hidden">
                       <div
                         className="h-full bg-primary-container rounded-full"
-                        style={{ width: `${activeDisplay.quorumPercent}%` }}
+                        style={{ width: `${quorumPercent}%` }}
                       ></div>
                     </div>
 
@@ -627,7 +662,7 @@ export default async function DashboardPage() {
                     <div className="grid grid-cols-3 gap-2 pt-1 text-center">
                       <div className="flex flex-col p-2 rounded-lg bg-surface-container-lowest border border-surface-container-high">
                         <span className="font-title-md text-title-md text-tertiary-container font-bold">
-                          {activeDisplay.verified}
+                          {checkedLive}
                         </span>
                         <span className="font-caption text-caption text-secondary text-[11px] leading-tight">
                           Verified Present
@@ -635,7 +670,7 @@ export default async function DashboardPage() {
                       </div>
                       <div className="flex flex-col p-2 rounded-lg bg-surface-container-lowest border border-surface-container-high">
                         <span className="font-title-md text-title-md text-error font-bold">
-                          {activeDisplay.flagged}
+                          {alerts.filter((alert) => alert.session_id === liveSession.id && alert.status === "new").length}
                         </span>
                         <span className="font-caption text-caption text-secondary text-[11px] leading-tight">
                           Flagged Flags
@@ -643,7 +678,7 @@ export default async function DashboardPage() {
                       </div>
                       <div className="flex flex-col p-2 rounded-lg bg-surface-container-lowest border border-surface-container-high">
                         <span className="font-title-md text-title-md text-on-surface font-bold">
-                          {activeDisplay.awaiting}
+                          {awaitingLive}
                         </span>
                         <span className="font-caption text-caption text-secondary text-[11px] leading-tight">
                           Awaiting Scan
@@ -658,17 +693,17 @@ export default async function DashboardPage() {
               <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-surface-container-high">
                 <div className="flex items-center gap-1.5 text-secondary font-caption text-caption">
                   <Radio className="h-4 w-4 text-tertiary-container" />
-                  <span>{activeDisplay.kioskName}</span>
+                  <span>{liveSession.venue_name || "Classroom"}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Link
-                    href={liveSession ? `/sessions/${liveSession.id}` : "/sessions"}
+                    href={`/sessions/${liveSession.id}/qr`}
                     className="px-4 py-2 rounded-xl bg-surface-container-high text-error font-label-md text-label-md font-semibold hover:bg-error-container hover:text-on-error-container transition-colors cursor-pointer"
                   >
                     Close session
                   </Link>
                   <Link
-                    href={liveSession ? `/sessions/${liveSession.id}/monitor` : "/sessions/monitor"}
+                    href={`/sessions/${liveSession.id}/monitor`}
                     className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary-container text-on-primary font-label-md text-label-md font-semibold shadow-sm hover:opacity-95 transition-all cursor-pointer"
                   >
                     <Monitor className="h-4 w-4" />
@@ -677,6 +712,21 @@ export default async function DashboardPage() {
                 </div>
               </div>
             </div>
+            ) : (
+            <div className="lg:col-span-7 flex flex-col justify-center gap-4 rounded-2xl border border-surface-container-high bg-surface-container-lowest p-6 shadow-sm">
+              <h2 className="font-headline-sm text-headline-sm font-bold text-on-surface">No class session is open</h2>
+              <p className="font-body-md text-body-md text-secondary">
+                Create a session when the lecture is about to start. The QR pass and the room monitor open from that session.
+              </p>
+              <Link
+                href="/sessions/new"
+                className="inline-flex w-fit items-center gap-2 rounded-xl bg-primary-container px-4 py-2.5 font-label-md text-label-md font-semibold text-on-primary"
+              >
+                <Plus className="h-4 w-4" />
+                New session
+              </Link>
+            </div>
+            )}
 
             {/* Right Column: Recent Alerts Card (5 cols) */}
             <div className="lg:col-span-5 bg-surface-container-lowest rounded-2xl p-6 shadow-sm border border-surface-container-high flex flex-col justify-between gap-4">
@@ -689,7 +739,7 @@ export default async function DashboardPage() {
                         Recent alerts
                       </h2>
                       <span className="px-2 py-0.5 rounded-full bg-error-container text-on-error-container font-caption text-caption font-bold">
-                        {hasLiveSessions ? openAlertsCount : 4} new
+                        {openAlertsCount} new
                       </span>
                     </div>
                     <span className="font-caption text-caption text-secondary">
@@ -700,119 +750,42 @@ export default async function DashboardPage() {
                     href="/alerts"
                     className="font-label-md text-label-md text-primary font-semibold hover:underline"
                   >
-                    View all ({hasLiveSessions ? alerts.length : 4})
+                    View all ({alerts.length})
                   </Link>
                 </div>
 
                 {/* Alerts List */}
-                <div className="flex flex-col gap-2.5">
-                  {/* Alert 1: Fake identity attempt */}
-                  <div className="p-3 rounded-xl bg-surface-container-low hover:bg-surface-container transition-colors flex items-center justify-between gap-3 border border-surface-container-high">
-                    <div className="flex items-start gap-3 min-w-0">
-                      <div className="w-9 h-9 rounded-xl bg-error-container text-on-error-container flex items-center justify-center flex-shrink-0 mt-0.5">
-                        <UserX className="h-4 w-4" />
-                      </div>
-                      <div className="flex flex-col min-w-0">
-                        <span className="font-label-md text-label-md text-on-surface font-semibold truncate">
-                          Fake identity attempt
-                        </span>
-                        <span className="font-caption text-caption text-secondary truncate">
-                          Index 20231045 • Sarah Osei
-                        </span>
-                        <span className="font-caption text-[11px] text-error font-medium">
-                          Liveness check failed • 10:03 AM
-                        </span>
-                      </div>
-                    </div>
-                    <Link
-                      href="/alerts/fake-identity"
-                      className="inline-flex items-center gap-0.5 px-2.5 py-1.5 rounded-lg bg-surface-container-lowest text-primary font-label-md text-label-md font-semibold hover:bg-primary-container hover:text-on-primary transition-all flex-shrink-0 shadow-sm border border-surface-container-high cursor-pointer"
-                    >
-                      <span>Review</span>
-                      <ChevronRight className="h-3.5 w-3.5" />
-                    </Link>
-                  </div>
-
-                  {/* Alert 2: Out of bounds */}
-                  <div className="p-3 rounded-xl bg-surface-container-low hover:bg-surface-container transition-colors flex items-center justify-between gap-3 border border-surface-container-high">
-                    <div className="flex items-start gap-3 min-w-0">
-                      <div className="w-9 h-9 rounded-xl bg-secondary-fixed text-on-secondary-fixed flex items-center justify-center flex-shrink-0 mt-0.5">
-                        <MapPinOff className="h-4 w-4" />
-                      </div>
-                      <div className="flex flex-col min-w-0">
-                        <span className="font-label-md text-label-md text-on-surface font-semibold truncate">
-                          Out of bounds
-                        </span>
-                        <span className="font-caption text-caption text-secondary truncate">
-                          Index 20230812 • 190 m away
-                        </span>
-                        <span className="font-caption text-[11px] text-on-secondary-fixed-variant font-medium">
-                          Campus North Quad • 10:05 AM
-                        </span>
-                      </div>
-                    </div>
-                    <Link
-                      href="/alerts/out-of-bounds"
-                      className="inline-flex items-center gap-0.5 px-2.5 py-1.5 rounded-lg bg-surface-container-lowest text-primary font-label-md text-label-md font-semibold hover:bg-primary-container hover:text-on-primary transition-all flex-shrink-0 shadow-sm border border-surface-container-high cursor-pointer"
-                    >
-                      <span>Review</span>
-                      <ChevronRight className="h-3.5 w-3.5" />
-                    </Link>
-                  </div>
-
-                  {/* Alert 3: Window cutoff check-in */}
-                  <div className="p-3 rounded-xl bg-surface-container-low hover:bg-surface-container transition-colors flex items-center justify-between gap-3 border border-surface-container-high">
-                    <div className="flex items-start gap-3 min-w-0">
-                      <div className="w-9 h-9 rounded-xl bg-secondary-fixed text-on-secondary-fixed flex items-center justify-center flex-shrink-0 mt-0.5">
-                        <Clock className="h-4 w-4" />
-                      </div>
-                      <div className="flex flex-col min-w-0">
-                        <span className="font-label-md text-label-md text-on-surface font-semibold truncate">
-                          Window cutoff check-in
-                        </span>
-                        <span className="font-caption text-caption text-secondary truncate">
-                          Index 20231190 • Late scan
-                        </span>
-                        <span className="font-caption text-[11px] text-secondary font-medium">
-                          Submitted +3m past kiosk • 10:08 AM
-                        </span>
-                      </div>
-                    </div>
-                    <Link
-                      href="/alerts/window-cutoff"
-                      className="inline-flex items-center gap-0.5 px-2.5 py-1.5 rounded-lg bg-surface-container-lowest text-primary font-label-md text-label-md font-semibold hover:bg-primary-container hover:text-on-primary transition-all flex-shrink-0 shadow-sm border border-surface-container-high cursor-pointer"
-                    >
-                      <span>Review</span>
-                      <ChevronRight className="h-3.5 w-3.5" />
-                    </Link>
-                  </div>
-
-                  {/* Alert 4: Multiple device signature */}
-                  <div className="p-3 rounded-xl bg-surface-container-low hover:bg-surface-container transition-colors flex items-center justify-between gap-3 border border-surface-container-high">
-                    <div className="flex items-start gap-3 min-w-0">
-                      <div className="w-9 h-9 rounded-xl bg-error-container text-on-error-container flex items-center justify-center flex-shrink-0 mt-0.5">
-                        <Smartphone className="h-4 w-4" />
-                      </div>
-                      <div className="flex flex-col min-w-0">
-                        <span className="font-label-md text-label-md text-on-surface font-semibold truncate">
-                          Multiple device signature
-                        </span>
-                        <span className="font-caption text-caption text-secondary truncate">
-                          Index 20230419 • Dual IP login
-                        </span>
-                        <span className="font-caption text-[11px] text-error font-medium">
-                          Simultaneous token use • 09:58 AM
-                        </span>
-                      </div>
-                    </div>
-                    <Link
-                      href="/alerts/multiple-devices"
-                      className="inline-flex items-center gap-0.5 px-2.5 py-1.5 rounded-lg bg-surface-container-lowest text-primary font-label-md text-label-md font-semibold hover:bg-primary-container hover:text-on-primary transition-all flex-shrink-0 shadow-sm border border-surface-container-high cursor-pointer"
-                    >
-                      <span>Review</span>
-                      <ChevronRight className="h-3.5 w-3.5" />
-                    </Link>
-                  </div>
+                                <div className="flex flex-col gap-2.5">
+                  {alerts.length === 0 ? (
+                    <p className="rounded-xl bg-surface-container-low px-4 py-6 text-center font-body-md text-label-md text-secondary">
+                      No alerts yet.
+                    </p>
+                  ) : (
+                    alerts.slice(0, 4).map((alert) => {
+                      const meta = alertCopy(alert.type);
+                      const Icon = meta.Icon;
+                      return (
+                        <div key={alert.id} className="flex items-center justify-between gap-3 rounded-xl border border-surface-container-high bg-surface-container-low p-3">
+                          <div className="flex min-w-0 items-start gap-3">
+                            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-error-container text-on-error-container">
+                              <Icon className="h-4 w-4" />
+                            </div>
+                            <div className="flex min-w-0 flex-col">
+                              <span className="truncate font-label-md text-label-md font-semibold text-on-surface">{meta.label}</span>
+                              <span className="truncate font-caption text-caption text-secondary">
+                                {alert.claimed_index || "No index"} · {alert.status}
+                              </span>
+                              <span className="font-caption text-[11px] font-medium text-secondary">{clock(alert.created_at)}</span>
+                            </div>
+                          </div>
+                          <Link href="/alerts" className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-surface-container-high bg-surface-container-lowest px-2.5 py-1.5 font-label-md text-label-md font-semibold text-primary">
+                            <span>Review</span>
+                            <ChevronRight className="h-3.5 w-3.5" />
+                          </Link>
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
               </div>
 
@@ -820,13 +793,13 @@ export default async function DashboardPage() {
               <div className="flex items-center justify-between text-secondary font-caption text-caption pt-2 border-t border-surface-container-high">
                 <span className="inline-flex items-center gap-1.5">
                   <Info className="h-4 w-4 text-primary" />
-                  Auto-quarantine enabled for high risks
+                  Review each alert before you dismiss it
                 </span>
                 <Link
                   href="/alerts"
                   className="text-primary font-semibold hover:underline cursor-pointer"
                 >
-                  Batch Dismiss Normal
+                  Open alerts
                 </Link>
               </div>
             </div>
@@ -846,24 +819,15 @@ export default async function DashboardPage() {
 
               <div className="flex items-center gap-2">
                 <div className="flex rounded-xl bg-surface-container p-1 text-secondary font-label-md text-label-md">
-                  <button
-                    type="button"
-                    className="px-3 py-1 rounded-lg bg-surface-container-lowest text-on-surface font-semibold shadow-sm cursor-pointer"
-                  >
-                    All ({hasLiveSessions ? sessions.length : 4})
-                  </button>
-                  <button
-                    type="button"
-                    className="px-3 py-1 rounded-lg hover:text-on-surface transition-colors cursor-pointer"
-                  >
+                  <Link href="/dashboard" className={`px-3 py-1 rounded-lg ${filter !== "upcoming" && filter !== "completed" ? "bg-surface-container-lowest text-on-surface font-semibold shadow-sm" : "hover:text-on-surface"}`}>
+                    All ({sessions.length})
+                  </Link>
+                  <Link href="/dashboard?filter=upcoming" className={`px-3 py-1 rounded-lg ${filter === "upcoming" ? "bg-surface-container-lowest text-on-surface font-semibold shadow-sm" : "hover:text-on-surface"}`}>
                     Upcoming
-                  </button>
-                  <button
-                    type="button"
-                    className="px-3 py-1 rounded-lg hover:text-on-surface transition-colors cursor-pointer"
-                  >
+                  </Link>
+                  <Link href="/dashboard?filter=completed" className={`px-3 py-1 rounded-lg ${filter === "completed" ? "bg-surface-container-lowest text-on-surface font-semibold shadow-sm" : "hover:text-on-surface"}`}>
                     Completed
-                  </button>
+                  </Link>
                 </div>
               </div>
             </div>
@@ -882,228 +846,77 @@ export default async function DashboardPage() {
                     <th className="py-3 px-4 text-right rounded-r-xl">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-surface-container-high font-body-md text-label-md text-on-surface">
-                  {/* Row 1: INF212 Algorithms (LIVE) */}
-                  <tr className="hover:bg-surface-container-low/70 transition-colors">
-                    <td className="py-4 px-4">
-                      <div className="flex flex-col">
-                        <span className="font-title-md text-title-md font-semibold text-on-surface">
-                          INF212 • Algorithms
-                        </span>
-                        <span className="font-caption text-caption text-secondary">
-                          BSc Computer Science • L200
-                        </span>
-                      </div>
-                    </td>
-                    <td className="py-4 px-4">
-                      <div className="flex flex-col">
-                        <span className="font-label-md text-label-md font-semibold text-tertiary-container">
-                          Live now
-                        </span>
-                        <span className="font-caption text-caption text-secondary">
-                          10:00 - 11:30 AM
-                        </span>
-                      </div>
-                    </td>
-                    <td className="py-4 px-4 text-secondary">15m window</td>
-                    <td className="py-4 px-4">
-                      <span className="inline-flex items-center gap-1.5 text-on-surface font-medium">
-                        <DoorClosed className="h-4 w-4 text-secondary" />
-                        Lecture Hall B
-                      </span>
-                    </td>
-                    <td className="py-4 px-4">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-tertiary-container/15 text-tertiary-container font-caption text-caption font-bold">
-                        <span className="w-1.5 h-1.5 rounded-full bg-tertiary-container animate-pulse"></span>
-                        LIVE
-                      </span>
-                    </td>
-                    <td className="py-4 px-4">
-                      <div className="flex flex-col gap-1 w-32">
-                        <div className="flex items-center justify-between font-caption text-caption text-secondary">
-                          <span>38/52</span>
-                          <span className="font-semibold text-on-surface">
-                            73%
-                          </span>
-                        </div>
-                        <div className="w-full h-1.5 rounded-full bg-surface-container-high overflow-hidden">
-                          <div
-                            className="h-full bg-primary-container rounded-full"
-                            style={{ width: "73%" }}
-                          ></div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-4 px-4 text-right">
-                      <Link
-                        href="/sessions/INF212/manage"
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary-container text-on-primary font-label-md text-label-md font-semibold shadow-sm hover:opacity-90 transition-all cursor-pointer"
-                      >
-                        Manage
-                      </Link>
-                    </td>
-                  </tr>
-
-                  {/* Row 2: CS302 Distributed Systems (Scheduled) */}
-                  <tr className="hover:bg-surface-container-low/70 transition-colors">
-                    <td className="py-4 px-4">
-                      <div className="flex flex-col">
-                        <span className="font-title-md text-title-md font-semibold text-on-surface">
-                          CS302 • Distributed Systems
-                        </span>
-                        <span className="font-caption text-caption text-secondary">
-                          BSc Computer Engineering • L300
-                        </span>
-                      </div>
-                    </td>
-                    <td className="py-4 px-4">
-                      <div className="flex flex-col">
-                        <span className="font-label-md text-label-md font-semibold text-on-surface">
-                          Today
-                        </span>
-                        <span className="font-caption text-caption text-secondary">
-                          02:00 - 03:30 PM
-                        </span>
-                      </div>
-                    </td>
-                    <td className="py-4 px-4 text-secondary">15m window</td>
-                    <td className="py-4 px-4">
-                      <span className="inline-flex items-center gap-1.5 text-on-surface font-medium">
-                        <DoorClosed className="h-4 w-4 text-secondary" />
-                        Hall 3B
-                      </span>
-                    </td>
-                    <td className="py-4 px-4">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container text-primary font-caption text-caption font-semibold">
-                        <Calendar className="h-3.5 w-3.5" />
-                        Scheduled
-                      </span>
-                    </td>
-                    <td className="py-4 px-4">
-                      <span className="font-caption text-caption text-secondary">
-                        –– / 64 enrolled
-                      </span>
-                    </td>
-                    <td className="py-4 px-4 text-right">
-                      <div className="inline-flex items-center gap-1.5 justify-end">
-                        <Link
-                          href="/sessions/CS302/start"
-                          className="px-2.5 py-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-primary font-label-md text-label-md font-semibold transition-colors cursor-pointer"
-                        >
-                          Start early
-                        </Link>
-                        <button
-                          type="button"
-                          className="p-1.5 rounded-lg text-secondary hover:bg-surface-container hover:text-on-surface transition-colors cursor-pointer"
-                          title="Edit session"
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-
-                  {/* Row 3: INF204 Database Systems (Completed) */}
-                  <tr className="hover:bg-surface-container-low/70 transition-colors">
-                    <td className="py-4 px-4">
-                      <div className="flex flex-col">
-                        <span className="font-title-md text-title-md font-semibold text-on-surface">
-                          INF204 • Database Systems
-                        </span>
-                        <span className="font-caption text-caption text-secondary">
-                          BSc Information Technology • L200
-                        </span>
-                      </div>
-                    </td>
-                    <td className="py-4 px-4">
-                      <div className="flex flex-col">
-                        <span className="font-label-md text-label-md text-on-surface">
-                          Yesterday
-                        </span>
-                        <span className="font-caption text-caption text-secondary">
-                          09:00 - 10:30 AM
-                        </span>
-                      </div>
-                    </td>
-                    <td className="py-4 px-4 text-secondary">15m window</td>
-                    <td className="py-4 px-4">
-                      <span className="inline-flex items-center gap-1.5 text-on-surface font-medium">
-                        <DoorClosed className="h-4 w-4 text-secondary" />
-                        Lab 04
-                      </span>
-                    </td>
-                    <td className="py-4 px-4">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-secondary-container/60 text-on-secondary-fixed-variant font-caption text-caption font-semibold">
-                        <CheckCheck className="h-3.5 w-3.5" />
-                        Completed
-                      </span>
-                    </td>
-                    <td className="py-4 px-4">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-tertiary-container/15 text-tertiary-container font-caption text-caption font-semibold">
-                        <Check className="h-3.5 w-3.5" />
-                        58/60 (96.7%)
-                      </span>
-                    </td>
-                    <td className="py-4 px-4 text-right">
-                      <Link
-                        href="/reports/INF204"
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-surface-container-low text-primary font-label-md text-label-md font-semibold hover:bg-surface-container transition-colors cursor-pointer"
-                      >
-                        View report
-                      </Link>
-                    </td>
-                  </tr>
-
-                  {/* Row 4: CS401 Machine Learning (Completed) */}
-                  <tr className="hover:bg-surface-container-low/70 transition-colors">
-                    <td className="py-4 px-4">
-                      <div className="flex flex-col">
-                        <span className="font-title-md text-title-md font-semibold text-on-surface">
-                          CS401 • Machine Learning
-                        </span>
-                        <span className="font-caption text-caption text-secondary">
-                          BSc Computer Science • L400
-                        </span>
-                      </div>
-                    </td>
-                    <td className="py-4 px-4">
-                      <div className="flex flex-col">
-                        <span className="font-label-md text-label-md text-on-surface">
-                          24 May 2024
-                        </span>
-                        <span className="font-caption text-caption text-secondary">
-                          11:00 - 12:30 PM
-                        </span>
-                      </div>
-                    </td>
-                    <td className="py-4 px-4 text-secondary">20m window</td>
-                    <td className="py-4 px-4">
-                      <span className="inline-flex items-center gap-1.5 text-on-surface font-medium">
-                        <DoorClosed className="h-4 w-4 text-secondary" />
-                        Auditorium A
-                      </span>
-                    </td>
-                    <td className="py-4 px-4">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-secondary-container/60 text-on-secondary-fixed-variant font-caption text-caption font-semibold">
-                        <CheckCheck className="h-3.5 w-3.5" />
-                        Completed
-                      </span>
-                    </td>
-                    <td className="py-4 px-4">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-tertiary-container/15 text-tertiary-container font-caption text-caption font-semibold">
-                        <Check className="h-3.5 w-3.5" />
-                        82/85 (96.5%)
-                      </span>
-                    </td>
-                    <td className="py-4 px-4 text-right">
-                      <Link
-                        href="/reports/CS401"
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-surface-container-low text-primary font-label-md text-label-md font-semibold hover:bg-surface-container transition-colors cursor-pointer"
-                      >
-                        View report
-                      </Link>
-                    </td>
-                  </tr>
+                                <tbody className="divide-y divide-surface-container-high font-body-md text-label-md text-on-surface">
+                  {visibleSessions.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-10 text-center text-secondary">
+                        No sessions in this view. Create one when the class is about to start.
+                      </td>
+                    </tr>
+                  ) : (
+                    visibleSessions.map((session) => {
+                      const status = phaseOf(session);
+                      const enrolled = enrolledByClass.get(session.class_id) ?? 0;
+                      const present = verifiedBySession.get(session.id) ?? 0;
+                      const percent = enrolled > 0 ? Math.round((present / enrolled) * 100) : 0;
+                      const minutes = Math.max(
+                        1,
+                        Math.round((new Date(session.ends_at).getTime() - new Date(session.starts_at).getTime()) / 60000),
+                      );
+                      return (
+                        <tr key={session.id} className="hover:bg-surface-container-low/70 transition-colors">
+                          <td className="px-4 py-4">
+                            <div className="flex flex-col">
+                              <span className="font-title-md text-title-md font-semibold text-on-surface">
+                                {session.classes?.code || "Class"} · {session.title}
+                              </span>
+                              <span className="font-caption text-caption text-secondary">
+                                {session.classes?.title || "Course"}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-4">
+                            <div className="flex flex-col">
+                              <span className="font-label-md text-label-md font-semibold text-on-surface">{dayKey(session.starts_at)}</span>
+                              <span className="font-caption text-caption text-secondary">
+                                {clock(session.starts_at)} – {clock(session.ends_at)}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-4 text-secondary">{minutes}m window</td>
+                          <td className="px-4 py-4">
+                            <span className="inline-flex items-center gap-1.5 font-medium text-on-surface">
+                              <DoorClosed className="h-4 w-4 text-secondary" />
+                              {session.venue_name || "Classroom"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-4">
+                            <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-container px-2.5 py-1 font-caption text-caption font-semibold text-primary">
+                              {status === "live" ? "LIVE" : status === "upcoming" ? "Scheduled" : "Completed"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-4">
+                            <span className="font-caption text-caption text-secondary">
+                              {enrolled === 0 ? "No roster yet" : `${present}/${enrolled} (${percent}%)`}
+                            </span>
+                          </td>
+                          <td className="px-4 py-4 text-right">
+                            <div className="inline-flex items-center justify-end gap-1.5">
+                              <Link href={`/sessions/${session.id}/qr`} className="rounded-lg bg-primary-container px-3 py-1.5 font-label-md text-label-md font-semibold text-on-primary">
+                                QR pass
+                              </Link>
+                              <Link
+                                href={status === "completed" ? "/reports" : `/sessions/${session.id}/monitor`}
+                                className="rounded-lg bg-surface-container-low px-3 py-1.5 font-label-md text-label-md font-semibold text-primary"
+                              >
+                                {status === "completed" ? "View report" : "Monitor"}
+                              </Link>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
@@ -1111,7 +924,7 @@ export default async function DashboardPage() {
             {/* Table Footer with pagination */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 text-secondary font-caption text-caption border-t border-surface-container-high">
               <span>
-                Showing {hasLiveSessions ? sessions.length : 4} active and recent course sessions
+                Showing {visibleSessions.length} of {sessions.length} sessions
               </span>
               <div className="flex items-center gap-2">
                 <button

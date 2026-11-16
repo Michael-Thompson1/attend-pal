@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import jsQR from "jsqr";
 import {
   AlertCircle,
   Fingerprint,
@@ -12,7 +14,15 @@ import {
   ScanQrCode,
   School,
   ShieldCheck,
+  X,
 } from "lucide-react";
+
+function tokenFromScan(value: string) {
+  const fromLink = value.match(/\/attend\/([A-Za-z0-9]{20,80})/);
+  if (fromLink) return fromLink[1];
+  const raw = value.trim();
+  return /^[A-Za-z0-9]{20,80}$/.test(raw) ? raw : null;
+}
 
 export default function LinkInactiveView({
   venue,
@@ -29,17 +39,80 @@ export default function LinkInactiveView({
   detectedTime: string;
   detectedZone: string;
 }) {
+  const router = useRouter();
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
   const place = venue.trim();
   const courseLabel = course.trim() || "—";
   const sessionLabel = sessionId.trim() || "—";
   const kiosk = kioskName.trim() || "Campus Verification Kiosk";
 
+  useEffect(() => {
+    if (!scanning) return;
+    let stopped = false;
+    let frame = 0;
+    let stream: MediaStream | null = null;
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+
+    async function start() {
+      if (!video || !canvas || !navigator.mediaDevices?.getUserMedia) {
+        setCameraError("This browser cannot open a camera. Ask your lecturer for the session link.");
+        return;
+      }
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" } },
+          audio: false,
+        });
+        if (stopped) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        video.srcObject = stream;
+        await video.play();
+        const tick = () => {
+          if (stopped) return;
+          if (video.readyState >= 2 && video.videoWidth > 0) {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const context = canvas.getContext("2d", { willReadFrequently: true });
+            if (context) {
+              context.drawImage(video, 0, 0, canvas.width, canvas.height);
+              const image = context.getImageData(0, 0, canvas.width, canvas.height);
+              const code = jsQR(image.data, image.width, image.height, { inversionAttempts: "attemptBoth" });
+              const token = code ? tokenFromScan(code.data) : null;
+              if (token) {
+                stopped = true;
+                stream?.getTracks().forEach((track) => track.stop());
+                router.push(`/attend/${token}`);
+                return;
+              }
+            }
+          }
+          frame = window.requestAnimationFrame(tick);
+        };
+        frame = window.requestAnimationFrame(tick);
+      } catch {
+        if (!stopped) setCameraError("Allow the camera to scan the code on the classroom screen.");
+      }
+    }
+
+    void start();
+    return () => {
+      stopped = true;
+      window.cancelAnimationFrame(frame);
+      stream?.getTracks().forEach((track) => track.stop());
+    };
+  }, [scanning, router]);
+
   function scanAgain() {
     if (scanning) return;
+    setCameraError(null);
     setScanning(true);
-    window.setTimeout(() => setScanning(false), 1200);
   }
 
   return (
@@ -153,6 +226,34 @@ export default function LinkInactiveView({
           </button>
         </div>
       </div>
+
+      {scanning && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-inverse-surface text-surface">
+          <div className="flex items-center justify-between px-4 py-3">
+            <p className="font-label-lg text-label-lg">Scan new QR code</p>
+            <button
+              type="button"
+              aria-label="Close scanner"
+              onClick={() => setScanning(false)}
+              className="flex h-11 w-11 items-center justify-center rounded-full"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <div className="relative mx-4 flex-1 overflow-hidden rounded-2xl bg-black">
+            <video ref={videoRef} className="h-full w-full object-cover" playsInline muted />
+            <canvas ref={canvasRef} className="hidden" />
+            {cameraError && (
+              <div className="absolute inset-0 flex items-center justify-center bg-inverse-surface/80 p-6 text-center">
+                <p className="font-body-md text-body-md">{cameraError}</p>
+              </div>
+            )}
+          </div>
+          <p className="px-6 py-4 text-center font-caption text-caption">
+            Point the camera at the QR code on the classroom screen.
+          </p>
+        </div>
+      )}
 
       {helpOpen && (
         <div

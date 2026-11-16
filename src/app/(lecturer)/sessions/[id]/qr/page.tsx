@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
+import QRCode from "qrcode";
 import { createClient } from "@/lib/supabase/server";
 import { getSessionDetailsAction } from "../../actions";
 import SessionQRClientView from "@/components/lecturer/session-qr-client-view";
@@ -56,6 +57,12 @@ export default async function SessionQRPage({ params }: SessionQRPageProps) {
     id,
     ...DEMO_FALLBACK_SESSION,
   };
+  const attendUrl = `${baseUrl}/attend/${sessionData.token}`;
+  const qrDataUrl = await QRCode.toDataURL(attendUrl, {
+    width: 640,
+    margin: 1,
+    errorCorrectionLevel: "M",
+  });
 
-  return <SessionQRClientView session={sessionData} baseUrl={baseUrl} />;
+  return <SessionQRClientView session={sessionData} baseUrl={baseUrl} qrDataUrl={qrDataUrl} />;
 }

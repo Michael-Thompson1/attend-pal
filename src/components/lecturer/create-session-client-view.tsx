@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
+import HeaderSearch from "@/components/lecturer/header-search";
 import {
   GraduationCap,
   LayoutGrid,
@@ -74,13 +75,13 @@ export default function CreateSessionClientView({
   );
   const [showClassDropdown, setShowClassDropdown] = useState(false);
   const [radiusM, setRadiusM] = useState<number>(defaults.radiusM);
-  const [sessionTitle, setSessionTitle] = useState(
-    "Lecture 14: Binary Search Trees & Balanced AVL Trees"
-  );
+  const [sessionTitle, setSessionTitle] = useState("");
   const [requireLiveness, setRequireLiveness] = useState(defaults.requireLiveness);
   const [allowSecondCheckin, setAllowSecondCheckin] = useState(defaults.allowSecondCheckin);
   const [notifySuspicious, setNotifySuspicious] = useState(defaults.notifySuspicious);
   const [selectedVenue, setSelectedVenue] = useState("Lecture Hall B");
+  const [center, setCenter] = useState({ lat: 5.1155, lng: -1.2909 });
+  const [gpsMessage, setGpsMessage] = useState<string | null>(null);
   const [sessionDate, setSessionDate] = useState(() => {
     const d = new Date();
     return d.toISOString().split("T")[0];
@@ -128,8 +129,8 @@ export default function CreateSessionClientView({
     formData.set("ends_at", endsAt);
     formData.set("radius_m", String(radiusM));
     formData.set("venue_name", selectedVenue);
-    formData.set("center_lat", "5.1155");
-    formData.set("center_lng", "-1.2909");
+    formData.set("center_lat", String(center.lat));
+    formData.set("center_lng", String(center.lng));
     formData.set("require_liveness", String(requireLiveness));
     formData.set("allow_second_checkin", String(allowSecondCheckin));
     formData.set("notify_suspicious", String(notifySuspicious));
@@ -274,14 +275,7 @@ export default function CreateSessionClientView({
       <div className="flex-1 md:pl-72 flex flex-col min-w-0">
         {/* Top Header */}
         <header className="fixed top-0 left-0 md:left-72 right-0 h-16 bg-surface-container-lowest/90 backdrop-blur-xl border-b border-surface-container-high z-40 flex items-center justify-between px-6 lg:px-10">
-          <div className="relative w-72 sm:w-96">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-outline" />
-            <input
-              type="search"
-              placeholder="Search students, courses, or sessions..."
-              className="w-full h-10 pl-10 pr-4 rounded-xl bg-surface-container-low text-on-surface placeholder:text-outline font-body-md text-label-md border-0 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
-            />
-          </div>
+          <HeaderSearch />
 
           <div className="flex items-center gap-4">
             <div className="relative">
@@ -665,8 +659,9 @@ export default function CreateSessionClientView({
                       <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-outline h-4 w-4" />
                       <input
                         type="text"
-                        defaultValue="Department of Computer Science - Lecture Hall B"
-                        placeholder="Search campus building or hall..."
+                        value={selectedVenue}
+                        onChange={(event) => setSelectedVenue(event.target.value)}
+                        placeholder="Lecture hall or classroom"
                         className="w-full h-11 pl-10 pr-4 rounded-xl bg-surface-container-low border border-surface-container-high text-on-surface font-label-md text-label-md font-medium focus:bg-surface-container-lowest focus:ring-2 focus:ring-primary/20 focus:outline-none transition-all"
                       />
                     </div>
@@ -674,6 +669,20 @@ export default function CreateSessionClientView({
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
+                        onClick={() => {
+                          if (!navigator.geolocation) {
+                            setGpsMessage("This browser cannot read a location.");
+                            return;
+                          }
+                          navigator.geolocation.getCurrentPosition(
+                            (position) => {
+                              setCenter({ lat: position.coords.latitude, lng: position.coords.longitude });
+                              setGpsMessage("Classroom pin set from this device.");
+                            },
+                            () => setGpsMessage("Location permission was blocked. The campus pin stays in place."),
+                            { enableHighAccuracy: true, timeout: 10000 },
+                          );
+                        }}
                         className="h-11 px-3.5 rounded-xl bg-surface-container-low hover:bg-surface-container text-on-surface font-label-md text-label-md font-semibold flex items-center gap-1.5 transition-all shadow-xs border border-surface-container-high cursor-pointer"
                         title="Use current device GPS"
                       >
@@ -722,8 +731,9 @@ export default function CreateSessionClientView({
                   <div className="flex flex-col font-caption text-caption">
                     <span className="font-semibold text-on-surface">Precision location tip</span>
                     <span>
-                      Laptop location can be inaccurate inside deep campus structures. Drag the pin directly over the classroom footprint if the indicator drifts.
+                      Laptop location can be inaccurate inside deep campus structures. Use Current GPS while you are standing in the classroom.
                     </span>
+                    {gpsMessage && <span className="font-semibold text-on-surface">{gpsMessage}</span>}
                   </div>
                 </div>
 

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import HeaderSearch from "@/components/lecturer/header-search";
 import {
   GraduationCap,
   LayoutGrid,
@@ -408,14 +409,7 @@ export default function ClassesClientView({
       <div className="flex-1 md:pl-72 flex flex-col min-w-0">
         {/* Top Header */}
         <header className="fixed top-0 left-0 md:left-72 right-0 h-16 bg-surface-container-lowest/90 backdrop-blur-xl border-b border-surface-container-high z-40 flex items-center justify-between px-6 lg:px-10">
-          <div className="relative w-72 sm:w-96">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-outline" />
-            <input
-              type="search"
-              placeholder="Search students, courses, or sessions..."
-              className="w-full h-10 pl-10 pr-4 rounded-xl bg-surface-container-low text-on-surface placeholder:text-outline font-body-md text-label-md border-0 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
-            />
-          </div>
+          <HeaderSearch />
 
           <div className="flex items-center gap-4">
             <div className="relative">

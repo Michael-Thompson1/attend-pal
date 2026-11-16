@@ -122,9 +122,9 @@ export async function getSessionDetailsAction(sessionId: string) {
 
   return {
     ...session,
-    class_code: cls?.code || "INF212",
-    class_title: cls?.title || "Data Structures & Algorithms",
-    student_count: studentCount || 52,
+    class_code: cls?.code || "Class",
+    class_title: cls?.title || session.title,
+    student_count: studentCount ?? 0,
     checked_in_count: checkedInCount || 0,
   };
 }
@@ -151,6 +151,8 @@ export async function closeSessionAction(sessionId: string) {
 
   revalidatePath(`/sessions/${sessionId}/qr`);
   revalidatePath(`/sessions/${sessionId}/monitor`);
+  revalidatePath("/sessions");
+  revalidatePath("/dashboard");
   return { success: true };
 }
 
@@ -163,8 +165,7 @@ export async function regenerateTokenAction(sessionId: string) {
 
   if (!user) return { error: "Unauthorized" };
 
-  // Generate a new 6-char random token or timestamp-based token
-  const newToken = Math.random().toString(36).substring(2, 10).toUpperCase();
+  const newToken = `${crypto.randomUUID()}${crypto.randomUUID()}`.replace(/-/g, "");
 
   const { error } = await supabase
     .from("sessions")

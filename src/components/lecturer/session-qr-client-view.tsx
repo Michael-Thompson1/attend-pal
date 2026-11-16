@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import QRCode from "qrcode";
 import {
   GraduationCap,
   LayoutGrid,
@@ -11,7 +13,6 @@ import {
   BarChart3,
   Settings,
   MapPin,
-  Search,
   User,
   ShieldCheck,
   CheckCircle,
@@ -35,6 +36,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { signOutAction } from "@/app/auth/actions";
+import HeaderSearch from "@/components/lecturer/header-search";
 import {
   closeSessionAction,
   regenerateTokenAction,
@@ -62,13 +64,17 @@ interface SessionQRClientViewProps {
     checked_in_count: number;
   };
   baseUrl?: string;
+  qrDataUrl: string;
 }
 
 export default function SessionQRClientView({
   session: initialSession,
   baseUrl = "https://attendpal.ucc.edu.gh",
+  qrDataUrl,
 }: SessionQRClientViewProps) {
+  const router = useRouter();
   const [session, setSession] = useState(initialSession);
+  const [liveQr, setLiveQr] = useState(qrDataUrl);
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -81,7 +87,19 @@ export default function SessionQRClientView({
     : `AP-7842-${session.class_code.slice(0, 3)}`;
 
   // Web link for students (derived deterministically from baseUrl to guarantee 0 SSR/client mismatch)
-  const studentWebLink = `${baseUrl}/attend?session=${session.id}`;
+  const studentWebLink = `${baseUrl}/attend/${session.token}`;
+
+  useEffect(() => {
+    let cancelled = false;
+    QRCode.toDataURL(studentWebLink, { width: 640, margin: 1, errorCorrectionLevel: "M" })
+      .then((url) => {
+        if (!cancelled) setLiveQr(url);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [studentWebLink]);
 
   async function handleCopyLink() {
     try {
@@ -118,6 +136,7 @@ export default function SessionQRClientView({
       const res = await regenerateTokenAction(session.id);
       if (res && res.success && res.token) {
         setSession((prev) => ({ ...prev, token: res.token! }));
+        router.refresh();
         setActionMessage("Security token regenerated successfully!");
         setTimeout(() => setActionMessage(null), 4000);
       }
@@ -277,14 +296,7 @@ export default function SessionQRClientView({
       <div className="flex-1 md:pl-72 flex flex-col min-w-0">
         {/* Top Header */}
         <header className="fixed top-0 left-0 md:left-72 right-0 h-16 bg-surface-container-lowest/90 backdrop-blur-xl border-b border-surface-container-high z-40 flex items-center justify-between px-6 lg:px-10">
-          <div className="relative w-72 sm:w-96">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-outline" />
-            <input
-              type="search"
-              placeholder="Search students, courses, or sessions..."
-              className="w-full h-10 pl-10 pr-4 rounded-xl bg-surface-container-low text-on-surface placeholder:text-outline font-body-md text-label-md border-0 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
-            />
-          </div>
+          <HeaderSearch />
 
           <div className="flex items-center gap-4">
             <div className="relative">
@@ -423,103 +435,12 @@ export default function SessionQRClientView({
 
                 {/* High-Contrast Vector SVG QR Code */}
                 <div className="relative w-[300px] h-[300px] sm:w-[340px] sm:h-[340px] bg-white flex items-center justify-center p-2">
-                  <svg
-                    aria-label={`Attendance QR Code for ${session.class_code}`}
-                    className="w-full h-full text-on-surface"
-                    fill="currentColor"
-                    viewBox="0 0 240 240"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    {/* Position Detection Patterns (Top-Left) */}
-                    <rect fill="currentColor" height="60" rx="6" width="60" x="10" y="10" />
-                    <rect fill="#ffffff" height="40" rx="3" width="40" x="20" y="20" />
-                    <rect fill="currentColor" height="24" rx="2" width="24" x="28" y="28" />
-
-                    {/* Position Detection Patterns (Top-Right) */}
-                    <rect fill="currentColor" height="60" rx="6" width="60" x="170" y="10" />
-                    <rect fill="#ffffff" height="40" rx="3" width="40" x="180" y="20" />
-                    <rect fill="currentColor" height="24" rx="2" width="24" x="188" y="28" />
-
-                    {/* Position Detection Patterns (Bottom-Left) */}
-                    <rect fill="currentColor" height="60" rx="6" width="60" x="10" y="170" />
-                    <rect fill="#ffffff" height="40" rx="3" width="40" x="20" y="180" />
-                    <rect fill="currentColor" height="24" rx="2" width="24" x="28" y="188" />
-
-                    {/* Timing Lines & Alignment Markers */}
-                    <rect height="8" rx="1" width="8" x="80" y="30" />
-                    <rect height="8" rx="1" width="8" x="96" y="30" />
-                    <rect height="8" rx="1" width="8" x="112" y="30" />
-                    <rect height="8" rx="1" width="8" x="128" y="30" />
-                    <rect height="8" rx="1" width="8" x="144" y="30" />
-                    <rect height="8" rx="1" width="8" x="30" y="80" />
-                    <rect height="8" rx="1" width="8" x="30" y="96" />
-                    <rect height="8" rx="1" width="8" x="30" y="112" />
-                    <rect height="8" rx="1" width="8" x="30" y="128" />
-                    <rect height="8" rx="1" width="8" x="30" y="144" />
-
-                    {/* Realistic Modules */}
-                    <rect height="10" rx="1.5" width="10" x="80" y="12" />
-                    <rect height="10" rx="1.5" width="10" x="100" y="12" />
-                    <rect height="10" rx="1.5" width="10" x="130" y="12" />
-                    <rect height="10" rx="1.5" width="10" x="150" y="12" />
-                    <rect height="10" rx="1.5" width="10" x="90" y="50" />
-                    <rect height="10" rx="1.5" width="10" x="120" y="50" />
-                    <rect height="10" rx="1.5" width="10" x="140" y="50" />
-
-                    <rect height="10" rx="1.5" width="10" x="12" y="80" />
-                    <rect height="10" rx="1.5" width="10" x="50" y="90" />
-                    <rect height="10" rx="1.5" width="10" x="12" y="120" />
-                    <rect height="10" rx="1.5" width="10" x="50" y="140" />
-
-                    <rect height="12" rx="2" width="12" x="75" y="75" />
-                    <rect height="12" rx="2" width="12" x="95" y="75" />
-                    <rect height="12" rx="2" width="12" x="135" y="75" />
-                    <rect height="12" rx="2" width="12" x="155" y="75" />
-                    <rect height="12" rx="2" width="12" x="75" y="95" />
-                    <rect height="12" rx="2" width="12" x="155" y="95" />
-                    <rect height="12" rx="2" width="12" x="175" y="95" />
-                    <rect height="12" rx="2" width="12" x="215" y="95" />
-                    <rect height="12" rx="2" width="12" x="135" y="115" />
-                    <rect height="12" rx="2" width="12" x="175" y="115" />
-                    <rect height="12" rx="2" width="12" x="195" y="115" />
-                    <rect height="12" rx="2" width="12" x="75" y="135" />
-                    <rect height="12" rx="2" width="12" x="95" y="135" />
-                    <rect height="12" rx="2" width="12" x="155" y="135" />
-                    <rect height="12" rx="2" width="12" x="215" y="135" />
-                    <rect height="12" rx="2" width="12" x="175" y="135" />
-                    <rect height="12" rx="2" width="12" x="195" y="155" />
-
-                    <rect height="12" rx="2" width="12" x="75" y="175" />
-                    <rect height="12" rx="2" width="12" x="95" y="175" />
-                    <rect height="12" rx="2" width="12" x="115" y="175" />
-                    <rect height="12" rx="2" width="12" x="155" y="175" />
-                    <rect height="12" rx="2" width="12" x="175" y="175" />
-                    <rect height="12" rx="2" width="12" x="75" y="195" />
-                    <rect height="12" rx="2" width="12" x="115" y="195" />
-                    <rect height="12" rx="2" width="12" x="135" y="195" />
-                    <rect height="12" rx="2" width="12" x="195" y="195" />
-                    <rect height="12" rx="2" width="12" x="215" y="195" />
-                    <rect height="12" rx="2" width="12" x="95" y="215" />
-                    <rect height="12" rx="2" width="12" x="135" y="215" />
-                    <rect height="12" rx="2" width="12" x="155" y="215" />
-                    <rect height="12" rx="2" width="12" x="175" y="215" />
-
-                    <rect height="8" width="8" x="180" y="80" />
-                    <rect height="8" width="8" x="200" y="80" />
-                    <rect height="8" width="8" x="180" y="150" />
-                    <rect height="8" width="8" x="200" y="130" />
-                    <rect height="8" width="8" x="100" y="155" />
-                    <rect height="8" width="8" x="120" y="155" />
-                  </svg>
-
-                  {/* Center Identity Badge / Attend Pal Shield */}
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <div className="w-14 h-14 bg-surface-container-lowest rounded-xl shadow-md p-1 flex items-center justify-center border border-surface-container-high">
-                      <div className="w-full h-full rounded-lg bg-primary flex items-center justify-center text-on-primary">
-                        <GraduationCap className="h-6 w-6" />
-                      </div>
-                    </div>
-                  </div>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={liveQr}
+                    alt={`Attendance QR code for ${session.class_code}`}
+                    className="h-full w-full"
+                  />
                 </div>
               </div>
 
@@ -649,7 +570,12 @@ export default function SessionQRClientView({
                 {/* Download High-Res PNG */}
                 <button
                   type="button"
-                  onClick={() => alert("High-res SVG/PNG QR saved to clipboard.")}
+                  onClick={() => {
+                    const link = document.createElement("a");
+                    link.href = liveQr;
+                    link.download = `${session.class_code}-attendance-qr.png`;
+                    link.click();
+                  }}
                   className="flex items-center justify-between p-3.5 rounded-xl bg-surface-container-low border border-surface-container-high hover:bg-surface-container transition-all min-h-[48px] group cursor-pointer text-left"
                 >
                   <div className="flex items-center gap-3">
