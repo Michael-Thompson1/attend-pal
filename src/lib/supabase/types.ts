@@ -66,6 +66,7 @@ export interface Database {
           email_out_of_bounds: boolean;
           email_shared_device: boolean;
           email_session_summary: boolean;
+          saved_places: { id: string; name: string; lat: number; lng: number }[];
           updated_at: string;
         };
         Insert: {
@@ -79,6 +80,7 @@ export interface Database {
           email_out_of_bounds?: boolean;
           email_shared_device?: boolean;
           email_session_summary?: boolean;
+          saved_places?: { id: string; name: string; lat: number; lng: number }[];
           updated_at?: string;
         };
         Update: {
@@ -92,6 +94,7 @@ export interface Database {
           email_out_of_bounds?: boolean;
           email_shared_device?: boolean;
           email_session_summary?: boolean;
+          saved_places?: { id: string; name: string; lat: number; lng: number }[];
           updated_at?: string;
         };
         Relationships: [];

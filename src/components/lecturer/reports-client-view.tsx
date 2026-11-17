@@ -221,7 +221,7 @@ export default function ReportsClientView({
   return (
     <div className="flex min-h-screen bg-surface font-body-md text-on-surface antialiased">
       {/* ── Sidebar ── */}
-      <aside className="fixed left-0 top-0 h-full w-64 bg-surface-container-lowest shadow-[0_1px_8px_rgba(0,0,0,0.04)] z-50 flex flex-col justify-between">
+      <aside className="fixed left-0 top-0 hidden h-full w-64 flex-col justify-between bg-surface-container-lowest shadow-[0_1px_8px_rgba(0,0,0,0.04)] z-50 md:flex">
         <div className="flex flex-col flex-1">
           {/* Logo */}
           <div className="h-16 px-space-lg flex items-center gap-space-sm">
@@ -280,9 +280,9 @@ export default function ReportsClientView({
       </aside>
 
       {/* ── Main Wrapper ── */}
-      <div className="pl-64 flex flex-col min-h-screen w-full">
+      <div className="flex min-h-screen w-full min-w-0 flex-col md:pl-64">
         {/* Top Header */}
-        <header className="fixed top-0 left-64 right-0 h-16 bg-surface-container-lowest/90 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)] z-40 px-space-lg flex items-center justify-between">
+        <header className="fixed top-0 right-0 left-0 z-40 flex h-16 items-center justify-between bg-surface-container-lowest/90 px-space-lg shadow-[0_1px_8px_rgba(0,0,0,0.04)] backdrop-blur-xl md:left-64">
           <div className="flex-1 max-w-md">
             <HeaderSearch variant="compact" />
           </div>
@@ -297,8 +297,8 @@ export default function ReportsClientView({
                 <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-error ring-2 ring-surface-container-lowest" />
               )}
             </Link>
-            <div className="h-8 w-px bg-surface-container-high" />
-            <div className="flex items-center gap-space-sm pl-space-xs">
+            <div className="hidden h-8 w-px bg-surface-container-high sm:block" />
+            <div className="hidden items-center gap-space-sm pl-space-xs sm:flex">
               <ProfilePhoto variant="icon" />
               <div className="flex flex-col text-left">
                 <span className="font-label-md text-label-md text-on-surface font-semibold leading-tight">

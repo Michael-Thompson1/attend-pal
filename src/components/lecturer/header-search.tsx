@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Search } from "lucide-react";
 import { searchPortalAction, type SearchHit } from "@/app/(lecturer)/search-actions";
+import { LecturerMobileNav } from "@/components/lecturer/mobile-nav";
 
 export default function HeaderSearch({ variant = "portal" }: { variant?: "portal" | "compact" }) {
   const router = useRouter();
@@ -33,13 +34,15 @@ export default function HeaderSearch({ variant = "portal" }: { variant?: "portal
     return () => document.removeEventListener("mousedown", close);
   }, []);
 
-  const width = variant === "compact" ? "relative w-full max-w-md" : "relative w-72 sm:w-96";
+  const width = variant === "compact" ? "relative min-w-0 w-full max-w-md" : "relative min-w-0 flex-1 max-w-md";
   const field =
     variant === "compact"
       ? "h-10 w-full rounded-xl bg-surface-container-low pr-4 pl-10 font-body-md text-body-md text-on-surface placeholder:text-secondary focus:bg-surface-container-lowest focus:ring-2 focus:ring-primary focus:outline-none"
       : "h-10 w-full rounded-xl border-0 bg-surface-container-low pr-4 pl-10 font-body-md text-label-md text-on-surface placeholder:text-outline focus:ring-2 focus:ring-primary/20 focus:outline-none";
 
   return (
+    <div className="flex min-w-0 flex-1 items-center gap-2">
+      <LecturerMobileNav />
     <div ref={box} className={width}>
       <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-outline" />
       <input
@@ -81,6 +84,7 @@ export default function HeaderSearch({ variant = "portal" }: { variant?: "portal
           )}
         </div>
       )}
+    </div>
     </div>
   );
 }

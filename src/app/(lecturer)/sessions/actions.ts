@@ -299,3 +299,72 @@ export async function dismissAlertAction(alertId: string, sessionId: string) {
   revalidatePath(`/sessions/${sessionId}/monitor`);
   return { success: true };
 }
+
+export type SavedPlace = { id: string; name: string; lat: number; lng: number };
+
+function asPlaces(value: unknown): SavedPlace[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const place = item as SavedPlace;
+    if (typeof place.id !== "string" || typeof place.name !== "string") return [];
+    if (!Number.isFinite(place.lat) || !Number.isFinite(place.lng)) return [];
+    return [place];
+  });
+}
+
+function placesError(message: string) {
+  if (/saved_places|schema cache|column/i.test(message)) {
+    return "Saved places need a database update. In the Supabase SQL editor, run db/migrations/2026_saved_places.sql, then try again.";
+  }
+  return message;
+}
+
+export async function savePlaceAction(input: { name: string; lat: number; lng: number }) {
+  const { supabase, user } = await getLecturer();
+  if (!user) return { error: "You need to be signed in.", places: [] as SavedPlace[] };
+  const name = input.name.trim();
+  if (!name) return { error: "Name the place before saving it.", places: [] as SavedPlace[] };
+  if (!Number.isFinite(input.lat) || !Number.isFinite(input.lng)) {
+    return { error: "Set the class center with Current GPS or a saved place first.", places: [] as SavedPlace[] };
+  }
+
+  const { data, error: readError } = await supabase
+    .from("lecturer_settings")
+    .select("saved_places")
+    .eq("lecturer_id", user.id)
+    .maybeSingle();
+  if (readError) return { error: placesError(readError.message), places: [] as SavedPlace[] };
+
+  const places = asPlaces(data?.saved_places);
+  const next = [
+    ...places.filter((place) => place.name.toLowerCase() !== name.toLowerCase()),
+    { id: crypto.randomUUID(), name, lat: input.lat, lng: input.lng },
+  ];
+  const { error } = await supabase
+    .from("lecturer_settings")
+    .upsert({ lecturer_id: user.id, saved_places: next }, { onConflict: "lecturer_id" });
+  if (error) return { error: placesError(error.message), places };
+  revalidatePath("/sessions/new");
+  return { error: null, places: next };
+}
+
+export async function deletePlaceAction(placeId: string) {
+  const { supabase, user } = await getLecturer();
+  if (!user) return { error: "You need to be signed in.", places: [] as SavedPlace[] };
+  const { data, error: readError } = await supabase
+    .from("lecturer_settings")
+    .select("saved_places")
+    .eq("lecturer_id", user.id)
+    .maybeSingle();
+  if (readError) return { error: placesError(readError.message), places: [] as SavedPlace[] };
+  const current = asPlaces(data?.saved_places);
+  const next = current.filter((place) => place.id !== placeId);
+  const { error } = await supabase
+    .from("lecturer_settings")
+    .update({ saved_places: next })
+    .eq("lecturer_id", user.id);
+  if (error) return { error: placesError(error.message), places: current };
+  revalidatePath("/sessions/new");
+  return { error: null, places: next };
+}

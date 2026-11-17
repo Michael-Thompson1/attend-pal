@@ -24,13 +24,9 @@ import {
   Hourglass,
   ShieldCheck,
   Crosshair,
-  Smartphone,
-  Compass,
-  Layers,
   Plus,
   Minus,
-  Bluetooth,
-  Radio,
+  Trash2,
   ArrowRight,
   Info,
   LogOut,
@@ -38,7 +34,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { signOutAction } from "@/app/auth/actions";
-import { createSessionAction } from "@/app/(lecturer)/sessions/actions";
+import { createSessionAction, deletePlaceAction, savePlaceAction, type SavedPlace } from "@/app/(lecturer)/sessions/actions";
 
 interface ClassRow {
   id: string;
@@ -60,6 +56,7 @@ interface CreateSessionClientProps {
   defaults: SessionDefaults;
   initialClassId?: string;
   openAlertCount?: number;
+  initialPlaces?: SavedPlace[];
 }
 
 function addMinutes(start: string, minutes: number) {
@@ -75,6 +72,7 @@ export default function CreateSessionClientView({
   defaults,
   initialClassId,
   openAlertCount = 0,
+  initialPlaces = [],
 }: CreateSessionClientProps) {
   const { name: lecturerName } = useLecturerProfile();
   const [selectedClassId, setSelectedClassId] = useState<string>(
@@ -86,9 +84,11 @@ export default function CreateSessionClientView({
   const [requireLiveness, setRequireLiveness] = useState(defaults.requireLiveness);
   const [allowSecondCheckin, setAllowSecondCheckin] = useState(defaults.allowSecondCheckin);
   const [notifySuspicious, setNotifySuspicious] = useState(defaults.notifySuspicious);
-  const [selectedVenue, setSelectedVenue] = useState("Lecture Hall B");
+  const [selectedVenue, setSelectedVenue] = useState("");
+  const [places, setPlaces] = useState<SavedPlace[]>(initialPlaces);
   const [center, setCenter] = useState<{ lat: number; lng: number } | null>(null);
   const [gpsMessage, setGpsMessage] = useState("Reading this device for the class center.");
+  const [placeMessage, setPlaceMessage] = useState<string | null>(null);
   const [sessionDate, setSessionDate] = useState(() => {
     const d = new Date();
     return d.toISOString().split("T")[0];
@@ -125,8 +125,24 @@ export default function CreateSessionClientView({
     );
   }, []);
 
-  // Dynamic visual radius scaling for the SVG map (scale 100m -> r=105)
-  const mapSvgRadius = Math.max(30, Math.min(220, (radiusM / 100) * 105));
+  async function saveCurrentPlace() {
+    if (!center) {
+      setPlaceMessage("Set the class center with Current GPS before saving a place.");
+      return;
+    }
+    setPlaceMessage(null);
+    const result = await savePlaceAction({ name: selectedVenue, lat: center.lat, lng: center.lng });
+    setPlaces(result.places);
+    setPlaceMessage(result.error);
+  }
+
+  async function removePlace(place: SavedPlace) {
+    const confirmed = window.confirm(`Delete the saved place “${place.name}”?`);
+    if (!confirmed) return;
+    const result = await deletePlaceAction(place.id);
+    setPlaces(result.places);
+    setPlaceMessage(result.error);
+  }
 
   const selectedClass = classes.find((c) => c.id === selectedClassId);
 
@@ -718,38 +734,51 @@ export default function CreateSessionClientView({
                       </button>
                       <button
                         type="button"
-                        className="h-11 px-3.5 rounded-xl bg-surface-container-low hover:bg-surface-container text-on-surface font-label-md text-label-md font-semibold flex items-center gap-1.5 transition-all shadow-xs border border-surface-container-high cursor-pointer"
-                        title="Sync via Bluetooth Beacon"
+                        onClick={saveCurrentPlace}
+                        className="h-11 px-3.5 rounded-xl bg-primary-container text-on-primary font-label-md text-label-md font-semibold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
                       >
-                        <Smartphone className="text-primary h-4 w-4" />
-                        <span>Phone sync</span>
+                        <MapPin className="h-4 w-4" />
+                        <span>Save place</span>
                       </button>
                     </div>
                   </div>
 
-                  {/* Landmark Quick Chips */}
                   <div className="flex items-center gap-2 overflow-x-auto pb-1">
                     <span className="font-caption text-caption text-secondary shrink-0 font-medium">
-                      Quick focus:
+                      Saved places:
                     </span>
-                    {["Lecture Hall B", "Science Quad", "Auditorium A", "Turing Computing Lab"].map(
-                      (venue) => (
+                    {places.length === 0 && (
+                      <span className="font-caption text-caption text-secondary">None yet. Name a place, set the center, then save it.</span>
+                    )}
+                    {places.map((place) => (
+                      <span
+                        key={place.id}
+                        className="inline-flex items-center gap-1 rounded-full bg-surface-container px-2 py-1 font-caption text-caption font-semibold text-on-surface"
+                      >
                         <button
-                          key={venue}
                           type="button"
-                          onClick={() => setSelectedVenue(venue)}
-                          className={`px-3 py-1 rounded-full font-caption text-caption font-semibold flex items-center gap-1 transition-all cursor-pointer ${
-                            selectedVenue === venue
-                              ? "bg-primary text-on-primary shadow-sm"
-                              : "bg-surface-container text-on-surface-variant hover:bg-surface-container-high"
-                          }`}
+                          onClick={() => {
+                            setSelectedVenue(place.name);
+                            setCenter({ lat: place.lat, lng: place.lng });
+                            setGpsMessage(`Class center is ${place.name}.`);
+                          }}
+                          className="inline-flex items-center gap-1 px-1"
                         >
                           <MapPin className="h-3 w-3" />
-                          <span>{venue}</span>
+                          {place.name}
                         </button>
-                      )
-                    )}
+                        <button
+                          type="button"
+                          aria-label={`Delete ${place.name}`}
+                          onClick={() => removePlace(place)}
+                          className="inline-flex h-6 w-6 items-center justify-center rounded-full text-secondary hover:bg-error-container/40 hover:text-error"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ))}
                   </div>
+                  {placeMessage && <p className="font-caption text-caption text-error">{placeMessage}</p>}
                 </div>
 
                 {/* Proactive Tip Box */}
@@ -764,200 +793,71 @@ export default function CreateSessionClientView({
                   </div>
                 </div>
 
-                {/* Map Viewport Simulator (Vector Styled Campus Layout) */}
-                <div className="relative w-full h-[510px] rounded-xl overflow-hidden bg-[#eaf0f8] select-none shadow-inner border border-surface-container-high flex flex-col justify-between p-4">
-                  {/* Inline Vector Map Canvas */}
-                  <svg
-                    className="absolute inset-0 w-full h-full"
-                    preserveAspectRatio="xMidYMid slice"
-                    viewBox="0 0 800 600"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <defs>
-                      <pattern id="campusGrid" width="40" height="40" patternUnits="userSpaceOnUse">
-                        <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#d5e3fc" strokeOpacity="0.6" strokeWidth="0.75" />
-                      </pattern>
-                    </defs>
-
-                    <rect width="800" height="600" fill="#f0f6ff" />
-                    <rect width="800" height="600" fill="url(#campusGrid)" />
-
-                    {/* Lawns */}
-                    <path d="M 40,80 Q 180,60 260,140 T 360,260 L 120,380 Z" fill="#d8f3e5" opacity="0.7" />
-                    <path d="M 520,340 Q 640,300 740,400 L 760,560 L 460,580 Z" fill="#d8f3e5" opacity="0.6" />
-
-                    {/* Pathways */}
-                    <path d="M -20,280 Q 240,290 400,280 T 820,310" fill="none" stroke="#ffffff" strokeLinecap="round" strokeWidth="24" />
-                    <path d="M 380,-20 L 380,620" fill="none" stroke="#ffffff" strokeLinecap="round" strokeWidth="20" />
-                    <path d="M 120,400 L 680,120" fill="none" stroke="#ffffff" strokeWidth="14" />
-                    <path d="M -20,280 Q 240,290 400,280 T 820,310" fill="none" stroke="#cbd5e1" strokeDasharray="6,6" strokeWidth="2" />
-
-                    {/* Mathematics Dept */}
-                    <g transform="translate(80, 110)">
-                      <rect width="180" height="90" rx="8" fill="#cbdcf8" stroke="#94a3b8" strokeWidth="1.5" />
-                      <text x="14" y="32" fill="#334155" fontFamily="Inter" fontSize="12" fontWeight="700">Dept of Mathematics</text>
-                      <text x="14" y="48" fill="#64748b" fontFamily="Inter" fontSize="10">Wing A · Lab 1-4</text>
-                    </g>
-
-                    {/* Computer Science Complex (Target Lecture Hall B) */}
-                    <g transform="translate(300, 180)">
-                      <rect width="260" height="170" rx="10" fill="#ffffff" stroke="#93c5fd" strokeWidth="2" filter="drop-shadow(0 4px 6px rgba(0,0,0,0.06))" />
-                      <rect x="15" y="15" width="110" height="140" rx="6" fill="#e2eeff" />
-                      <text x="24" y="42" fill="#1e40af" fontFamily="Inter" fontSize="13" fontWeight="700">{selectedVenue}</text>
-                      <text x="24" y="60" fill="#475569" fontFamily="Inter" fontSize="10" fontWeight="600">Cap: 180 seats</text>
-                      <rect x="135" y="15" width="110" height="65" rx="6" fill="#f8fafc" />
-                      <text x="145" y="42" fill="#475569" fontFamily="Inter" fontSize="11" fontWeight="600">Faculty Offices</text>
-                      <rect x="135" y="90" width="110" height="65" rx="6" fill="#f8fafc" />
-                      <text x="145" y="118" fill="#475569" fontFamily="Inter" fontSize="11" fontWeight="600">Server Annex</text>
-                    </g>
-
-                    {/* Library */}
-                    <g transform="translate(560, 60)">
-                      <rect width="180" height="120" rx="8" fill="#d9e6fa" stroke="#94a3b8" strokeWidth="1.5" />
-                      <text x="18" y="36" fill="#334155" fontFamily="Inter" fontSize="12" fontWeight="700">Central Library</text>
-                      <text x="18" y="52" fill="#64748b" fontFamily="Inter" fontSize="10">Science &amp; Tech Stacks</text>
-                    </g>
-
-                    {/* Student Commons */}
-                    <g transform="translate(180, 430)">
-                      <rect width="210" height="100" rx="8" fill="#e2e8f0" stroke="#94a3b8" strokeWidth="1.5" />
-                      <text x="18" y="34" fill="#334155" fontFamily="Inter" fontSize="12" fontWeight="700">Science Pavilion</text>
-                      <text x="18" y="50" fill="#64748b" fontFamily="Inter" fontSize="10">Student Commons</text>
-                    </g>
-
-                    {/* Geofence Perimeter Circle (Dynamic Radius Visualization) */}
-                    <g transform="translate(370, 260)">
-                      {/* Outer Pulse */}
-                      <circle
-                        r={mapSvgRadius * 1.15}
-                        fill="#1e40af"
-                        fillOpacity="0.10"
-                        stroke="#1e40af"
-                        strokeWidth="1.5"
-                        strokeDasharray="6,4"
-                      />
-                      {/* Active Geofence Area */}
-                      <circle
-                        r={mapSvgRadius}
-                        fill="#3b82f6"
-                        fillOpacity="0.18"
-                        stroke="#1e40af"
-                        strokeWidth="2.5"
-                      />
-                      {/* Radius Line & Label */}
-                      <line x1="0" y1="0" x2={mapSvgRadius} y2="0" stroke="#1e40af" strokeWidth="2" strokeLinecap="round" />
-                      <circle cx={mapSvgRadius} cy="0" r="4" fill="#1e40af" />
-                      <rect x={Math.max(10, mapSvgRadius / 2 - 35)} y="-22" width="70" height="18" rx="4" fill="#1e40af" />
-                      <text
-                        x={Math.max(10, mapSvgRadius / 2)}
-                        y="-10"
-                        fill="#ffffff"
-                        fontFamily="Inter"
-                        fontSize="10"
-                        fontWeight="700"
-                        textAnchor="middle"
+                <div className="relative h-[510px] w-full overflow-hidden rounded-xl border border-surface-container-high bg-surface-container shadow-inner">
+                  {center ? (
+                    <iframe
+                      title="Class center map"
+                      className="absolute inset-0 h-full w-full border-0"
+                      src={`https://maps.google.com/maps?q=${center.lat},${center.lng}&z=18&hl=en&output=embed`}
+                    />
+                  ) : (
+                    <div className="flex h-full items-center justify-center px-6 text-center font-body-md text-body-md text-secondary">
+                      Allow location, or press Current GPS, to see this place on the map.
+                    </div>
+                  )}
+                  <div className="pointer-events-none absolute top-3 left-3 right-3 z-10 flex flex-wrap items-center justify-between gap-2">
+                    <div className="pointer-events-auto rounded-lg border border-surface-container-high bg-surface-container-lowest/95 px-3 py-1.5 font-caption text-caption font-semibold text-on-surface shadow-sm">
+                      {center
+                        ? `${center.lat.toFixed(5)}, ${center.lng.toFixed(5)} · radius ${radiusM} m`
+                        : "Waiting for a location"}
+                    </div>
+                    {center && (
+                      <a
+                        href={`https://www.google.com/maps?q=${center.lat},${center.lng}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="pointer-events-auto rounded-lg border border-surface-container-high bg-surface-container-lowest/95 px-3 py-1.5 font-caption text-caption font-semibold text-primary shadow-sm"
                       >
-                        Radius: {radiusM}m
-                      </text>
-                    </g>
-                  </svg>
-
-                  {/* Centerpoint Marker Overlay */}
-                  <div className="absolute left-[370px] top-[260px] -translate-x-1/2 -translate-y-full flex flex-col items-center pointer-events-auto cursor-grab z-20">
-                    <div className="mb-1.5 px-3 py-1 rounded-lg bg-inverse-surface text-inverse-on-surface shadow-lg flex items-center gap-1.5 whitespace-nowrap animate-bounce">
-                      <span className="w-2 h-2 rounded-full bg-tertiary-fixed"></span>
-                      <span className="font-label-md text-label-md font-semibold">
-                        Session Centerpoint: {selectedVenue}
-                      </span>
-                    </div>
-                    <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-on-primary shadow-xl ring-4 ring-white">
-                      <MapPin className="h-5 w-5" />
-                    </div>
-                    <div className="w-4 h-1.5 bg-black/20 rounded-full blur-[1px] mt-0.5"></div>
+                        Open in Google Maps
+                      </a>
+                    )}
                   </div>
-
-                  {/* Top Map Coordinates Badge */}
-                  <div className="relative z-10 flex items-center justify-between w-full">
-                    <div className="bg-surface-container-lowest/90 backdrop-blur-md px-3 py-1.5 rounded-lg shadow-sm border border-surface-container-high flex items-center gap-2">
-                      <Radio className="text-primary h-4 w-4" />
-                      <span className="font-caption text-caption font-semibold text-on-surface">
-                        GPS: 5.1155° N, 1.2909° W (UCC)
-                      </span>
-                      <span className="w-1 h-1 rounded-full bg-outline"></span>
-                      <span className="font-caption text-caption text-secondary">
-                        Accurate to 3.2 m
-                      </span>
-                    </div>
-
-                    <div className="bg-surface-container-lowest/90 backdrop-blur-md px-3 py-1.5 rounded-lg shadow-sm border border-surface-container-high font-caption text-caption text-on-surface font-medium flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-green-500"></span>
-                      <span>UCC Academic Campus Layer</span>
-                    </div>
-                  </div>
-
-                  {/* Bottom Map Controls */}
-                  <div className="relative z-10 flex items-end justify-between w-full">
-                    <div className="bg-surface-container-lowest/90 backdrop-blur-md px-2.5 py-1 rounded-md shadow-xs border border-surface-container-high flex items-center gap-2 font-caption text-caption text-secondary font-medium">
-                      <div className="w-12 h-1 bg-secondary rounded-full"></div>
-                      <span>50 m</span>
-                    </div>
-
-                    <div className="flex flex-col gap-1.5 bg-surface-container-lowest/95 backdrop-blur-md p-1 rounded-xl shadow-md border border-surface-container-high">
-                      <button
-                        type="button"
-                        onClick={() => setRadiusM((prev) => Math.min(300, prev + 20))}
-                        className="w-9 h-9 rounded-lg flex items-center justify-center text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors cursor-pointer"
-                        title="Zoom in radius"
-                      >
-                        <Plus className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setRadiusM((prev) => Math.max(20, prev - 20))}
-                        className="w-9 h-9 rounded-lg flex items-center justify-center text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors cursor-pointer"
-                        title="Zoom out radius"
-                      >
-                        <Minus className="h-4 w-4" />
-                      </button>
-                      <div className="h-[1px] w-full bg-surface-container-high"></div>
-                      <button
-                        type="button"
-                        className="w-9 h-9 rounded-lg flex items-center justify-center text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors cursor-pointer"
-                        title="Orient North"
-                      >
-                        <Compass className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        className="w-9 h-9 rounded-lg flex items-center justify-center text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors cursor-pointer"
-                        title="Toggle Layer"
-                      >
-                        <Layers className="h-4 w-4" />
-                      </button>
-                    </div>
+                  <div className="absolute right-3 bottom-3 z-10 flex flex-col gap-1.5 rounded-xl border border-surface-container-high bg-surface-container-lowest/95 p-1 shadow-md">
+                    <button
+                      type="button"
+                      onClick={() => setRadiusM((prev) => Math.min(300, prev + 20))}
+                      className="flex h-9 w-9 items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface"
+                      title="Increase radius"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRadiusM((prev) => Math.max(20, prev - 20))}
+                      className="flex h-9 w-9 items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface"
+                      title="Decrease radius"
+                    >
+                      <Minus className="h-4 w-4" />
+                    </button>
                   </div>
                 </div>
 
-                {/* Campus Hall Details Strip */}
-                <div className="grid grid-cols-3 gap-3 pt-1">
-                  <div className="p-3 rounded-xl bg-surface-container-low border border-surface-container-high flex flex-col">
-                    <span className="font-caption text-caption text-secondary">Assigned Venue</span>
-                    <span className="font-label-md text-label-md text-on-surface font-semibold truncate">
-                      {selectedVenue}
+                <div className="grid grid-cols-1 gap-3 pt-1 sm:grid-cols-3">
+                  <div className="flex flex-col rounded-xl border border-surface-container-high bg-surface-container-low p-3">
+                    <span className="font-caption text-caption text-secondary">Place</span>
+                    <span className="truncate font-label-md text-label-md font-semibold text-on-surface">
+                      {selectedVenue.trim() || "Not named yet"}
                     </span>
                   </div>
-                  <div className="p-3 rounded-xl bg-surface-container-low border border-surface-container-high flex flex-col">
-                    <span className="font-caption text-caption text-secondary">Beacon Coverage</span>
-                    <span className="font-label-md text-label-md text-on-surface font-semibold flex items-center gap-1">
-                      <Bluetooth className="text-green-600 h-4 w-4" />
-                      <span>4 Nodes Active</span>
+                  <div className="flex flex-col rounded-xl border border-surface-container-high bg-surface-container-low p-3">
+                    <span className="font-caption text-caption text-secondary">Coordinates</span>
+                    <span className="font-label-md text-label-md font-semibold text-on-surface">
+                      {center ? `${center.lat.toFixed(5)}, ${center.lng.toFixed(5)}` : "Not set"}
                     </span>
                   </div>
-                  <div className="p-3 rounded-xl bg-surface-container-low border border-surface-container-high flex flex-col">
-                    <span className="font-caption text-caption text-secondary">Estimated Catchment</span>
-                    <span className="font-label-md text-label-md text-on-surface font-semibold">
-                      100% of seats
-                    </span>
+                  <div className="flex flex-col rounded-xl border border-surface-container-high bg-surface-container-low p-3">
+                    <span className="font-caption text-caption text-secondary">Check-in radius</span>
+                    <span className="font-label-md text-label-md font-semibold text-on-surface">{radiusM} m</span>
                   </div>
                 </div>
               </div>
@@ -968,12 +868,12 @@ export default function CreateSessionClientView({
           <div className="fixed bottom-0 left-0 md:left-72 right-0 bg-surface-container-lowest/95 backdrop-blur-xl border-t border-surface-container-high shadow-[0_-4px_16px_rgba(0,0,0,0.06)] z-30 px-6 lg:px-10 py-3.5 flex flex-col sm:flex-row items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-surface-container flex items-center justify-center text-primary shrink-0">
-                <Radio className="h-5 w-5" />
+                <Crosshair className="h-5 w-5" />
               </div>
               <div className="flex flex-col">
                 <div className="flex items-center gap-2">
                   <span className="font-label-md text-label-md text-on-surface font-semibold">
-                    Geofence: {radiusM} m around {selectedVenue}
+                    Geofence: {radiusM} m{selectedVenue.trim() ? ` around ${selectedVenue.trim()}` : ""}
                   </span>
                   <span className="w-1.5 h-1.5 rounded-full bg-primary"></span>
                   <span className="font-caption text-caption text-secondary">

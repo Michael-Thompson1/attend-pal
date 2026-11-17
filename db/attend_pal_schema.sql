@@ -56,6 +56,7 @@ create table public.lecturer_settings (
   email_out_of_bounds boolean not null default false,
   email_shared_device boolean not null default true,
   email_session_summary boolean not null default true,
+  saved_places jsonb not null default '[]'::jsonb,
   updated_at timestamptz not null default now()
 );
 

@@ -1,6 +1,7 @@
 import { getLecturer, getOpenAlertCount } from "@/lib/lecturer/session";
 import { redirect } from "next/navigation";
 import { getLecturerClassesAction } from "../actions";
+import type { SavedPlace } from "../actions";
 import CreateSessionClientView from "@/components/lecturer/create-session-client-view";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +18,7 @@ export default async function CreateSessionPage({
     redirect("/login");
   }
 
-  const [classes, openAlertCount, { data: settings }] = await Promise.all([
+  const [classes, openAlertCount, { data: settings }, placesResult] = await Promise.all([
     getLecturerClassesAction(),
     getOpenAlertCount(),
     supabase
@@ -27,12 +28,15 @@ export default async function CreateSessionPage({
       )
       .eq("lecturer_id", user.id)
       .maybeSingle(),
+    supabase.from("lecturer_settings").select("saved_places").eq("lecturer_id", user.id).maybeSingle(),
   ]);
+  const initialPlaces: SavedPlace[] = placesResult.error ? [] : (placesResult.data?.saved_places ?? []);
 
   return (
     <CreateSessionClientView
       classes={classes}
       openAlertCount={openAlertCount}
+      initialPlaces={initialPlaces}
       initialClassId={classId}
       defaults={{
         radiusM: settings?.default_radius_m ?? 100,
