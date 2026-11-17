@@ -1038,8 +1038,8 @@ function SelfieCapture({
         timer = window.setInterval(() => {
           if (video.readyState < 2 || video.videoWidth === 0) return;
           const canvas = document.createElement("canvas");
-          const scale = 320 / video.videoWidth;
-          canvas.width = 320;
+          const scale = 480 / video.videoWidth;
+          canvas.width = 480;
           canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
           const context = canvas.getContext("2d");
           if (!context) return;

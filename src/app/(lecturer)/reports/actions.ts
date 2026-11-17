@@ -194,10 +194,11 @@ export async function getClassReportDataAction(
       ? parseFloat((totalStudentRates / enrolledCount).toFixed(1))
       : 0;
 
-  // Biometric verification rate: check match_score >= 70 or verified
-  const verifiedCount = records.filter(
-    (r) => (r.match_score ?? 0) >= 70 || r.status === "verified"
-  ).length;
+  const verifiedCount = records.filter((record) => {
+    const score = record.match_score ?? 0;
+    const likeness = score <= 1 ? score : score / 100;
+    return likeness >= 0.5 || record.status === "verified";
+  }).length;
   const biometricVerificationRate =
     records.length > 0
       ? parseFloat(((verifiedCount / records.length) * 100).toFixed(1))

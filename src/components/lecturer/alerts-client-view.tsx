@@ -837,13 +837,13 @@ export default function AlertsClientView({
                                 style={{ width: `${selectedAlert.match_score}%` }}
                               />
                               <div
-                                className="absolute top-0 bottom-0 left-[70%] w-0.5 bg-on-surface/40 z-10"
-                                title="Approval Threshold (70%)"
+                                className="absolute top-0 bottom-0 left-[50%] w-0.5 bg-on-surface/40 z-10"
+                                title="Approval Threshold (50%)"
                               />
                             </div>
                             <div className="flex items-center justify-between font-caption text-caption text-secondary">
                               <span>Severe mismatch: Feature vectors deviate significantly.</span>
-                              <span className="font-semibold text-on-surface">Min: 70%</span>
+                              <span className="font-semibold text-on-surface">Min: 50%</span>
                             </div>
                           </div>
                         )}

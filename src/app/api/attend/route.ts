@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+
+export const maxDuration = 30;
 import { z } from "zod";
 import { runAttendCheck } from "@/lib/attend/check-in";
 
