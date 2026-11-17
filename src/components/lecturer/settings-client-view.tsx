@@ -1,6 +1,11 @@
 "use client";
 
+import { ProfilePhoto } from "@/components/lecturer/profile-photo";
+
+import { AttendMark } from "@/components/brand/attend-mark";
+
 import { useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   AlertTriangle,
@@ -14,7 +19,6 @@ import {
   Download,
   Eye,
   EyeOff,
-  GraduationCap,
   IdCard,
   Info,
   LayoutGrid,
@@ -59,6 +63,7 @@ export type SettingsViewData = {
   emailSharedDevice: boolean;
   emailSessionSummary: boolean;
   updatedLabel: string;
+  openAlertCount: number;
 };
 
 type Panel = "profile" | "security" | "defaults" | "notifications" | "privacy";
@@ -129,6 +134,7 @@ function Switch({
 }
 
 export default function SettingsClientView({ data }: { data: SettingsViewData }) {
+  const router = useRouter();
   const photoInputRef = useRef<HTMLInputElement>(null);
   const [isPending, startTransition] = useTransition();
   const [panel, setPanel] = useState<Panel>("profile");
@@ -194,9 +200,7 @@ export default function SettingsClientView({ data }: { data: SettingsViewData })
       <aside className="fixed left-0 top-0 z-50 hidden h-full w-72 flex-col justify-between border-r border-surface-container-high bg-surface-container-lowest shadow-[0_1px_8px_rgba(0,0,0,0.04)] md:flex">
         <div className="flex flex-col">
           <div className="flex h-16 items-center gap-3 border-b border-surface-container-high px-6">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-on-primary shadow-sm">
-              <GraduationCap className="h-5 w-5" />
-            </div>
+            <AttendMark />
             <div className="flex flex-col">
               <span className="font-title-lg text-title-lg font-bold tracking-tight text-primary">
                 Attend Pal
@@ -218,9 +222,11 @@ export default function SettingsClientView({ data }: { data: SettingsViewData })
                   <Bell className="h-5 w-5" />
                   Alerts
                 </span>
-                <span className="rounded-full bg-error-container px-2 py-0.5 font-caption text-caption font-bold text-on-error-container">
-                  3
-                </span>
+                {data.openAlertCount > 0 && (
+                  <span className="rounded-full bg-error-container px-2 py-0.5 font-caption text-caption font-bold text-on-error-container">
+                    {data.openAlertCount}
+                  </span>
+                )}
               </Link>
               <NavLink href="/reports" icon={BarChart3} label="Reports" />
               <Link
@@ -254,9 +260,7 @@ export default function SettingsClientView({ data }: { data: SettingsViewData })
           </div>
           <div className="flex items-center justify-between gap-2 pt-1">
             <div className="flex min-w-0 items-center gap-2.5">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-container font-bold text-caption text-on-primary">
-                {initials.charAt(0) || "L"}
-              </div>
+              <ProfilePhoto variant="initial" initial={initials.charAt(0)} />
               <div className="flex min-w-0 flex-col">
                 <span className="truncate font-label-md text-label-md font-semibold text-on-surface">
                   {fullName || data.fullName}
@@ -289,13 +293,13 @@ export default function SettingsClientView({ data }: { data: SettingsViewData })
               className="relative flex h-10 w-10 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
             >
               <Bell className="h-5 w-5" />
-              <span className="absolute top-2 right-2 h-2.5 w-2.5 rounded-full bg-error ring-2 ring-surface-container-lowest" />
+              {data.openAlertCount > 0 && (
+                <span className="absolute top-2 right-2 h-2.5 w-2.5 rounded-full bg-error ring-2 ring-surface-container-lowest" />
+              )}
             </Link>
             <div className="hidden h-8 w-px bg-surface-container-high sm:block" />
             <div className="hidden items-center gap-2.5 rounded-full bg-surface-container-low py-1.5 pr-3.5 pl-2 sm:flex">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-on-primary">
-                <User className="h-4 w-4" />
-              </div>
+              <ProfilePhoto variant="icon" />
               <div className="flex flex-col text-left">
                 <span className="font-label-md text-label-md leading-tight font-semibold text-on-surface">
                   {fullName || data.fullName}
@@ -426,7 +430,10 @@ export default function SettingsClientView({ data }: { data: SettingsViewData })
                           formData.set("photo", file);
                           run(
                             () => uploadProfilePhotoAction(formData),
-                            (result) => setPhotoUrl(result.photoUrl ?? null),
+                            (result) => {
+                              setPhotoUrl(result.photoUrl ?? null);
+                              router.refresh();
+                            },
                             "Profile photo saved"
                           );
                         }}
@@ -457,7 +464,10 @@ export default function SettingsClientView({ data }: { data: SettingsViewData })
                         onClick={() =>
                           run(
                             () => removeProfilePhotoAction(),
-                            () => setPhotoUrl(null),
+                            () => {
+                              setPhotoUrl(null);
+                              router.refresh();
+                            },
                             "Profile photo removed"
                           )
                         }

@@ -1,14 +1,9 @@
+import { getLecturer } from "@/lib/lecturer/session";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
-
 export const dynamic = "force-dynamic";
 
 export default async function LiveSessionRedirectPage() {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { supabase, user } = await getLecturer();
 
   if (!user) redirect("/login");
 

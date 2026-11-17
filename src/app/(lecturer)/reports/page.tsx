@@ -1,5 +1,5 @@
+import { getLecturer, getOpenAlertCount } from "@/lib/lecturer/session";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
 import ReportsClientView from "@/components/lecturer/reports-client-view";
 import {
   getLecturerClassesForReportsAction,
@@ -9,16 +9,16 @@ import {
 export const dynamic = "force-dynamic";
 
 export default async function ReportsPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { user } = await getLecturer();
 
   if (!user) {
     redirect("/login");
   }
 
-  const classes = await getLecturerClassesForReportsAction();
+  const [classes, openAlertCount] = await Promise.all([
+    getLecturerClassesForReportsAction(),
+    getOpenAlertCount(),
+  ]);
   const defaultReportData =
     classes.length > 0 ? await getClassReportDataAction(classes[0].id) : null;
 
@@ -26,6 +26,7 @@ export default async function ReportsPage() {
     <ReportsClientView
       classes={classes}
       initialReportData={defaultReportData}
+      openAlertCount={openAlertCount}
     />
   );
 }

@@ -1,11 +1,12 @@
 "use client";
 
+import { AttendMark } from "@/components/brand/attend-mark";
+import { ProfilePhoto } from "@/components/lecturer/profile-photo";
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import QRCode from "qrcode";
 import {
-  GraduationCap,
   LayoutGrid,
   BookOpen,
   Clock,
@@ -65,12 +66,14 @@ interface SessionQRClientViewProps {
   };
   baseUrl?: string;
   qrDataUrl: string;
+  openAlertCount?: number;
 }
 
 export default function SessionQRClientView({
   session: initialSession,
   baseUrl = "https://attendpal.ucc.edu.gh",
   qrDataUrl,
+  openAlertCount = 0,
 }: SessionQRClientViewProps) {
   const router = useRouter();
   const [session, setSession] = useState(initialSession);
@@ -172,9 +175,7 @@ export default function SessionQRClientView({
         <div className="flex flex-col">
           {/* Logo & Portal Label */}
           <div className="h-16 px-6 flex items-center gap-3 border-b border-surface-container-high">
-            <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-on-primary shadow-sm">
-              <GraduationCap className="h-5 w-5" />
-            </div>
+            <AttendMark />
             <div className="flex flex-col">
               <span className="font-title-lg text-title-lg font-bold text-primary tracking-tight">
                 Attend Pal
@@ -221,9 +222,11 @@ export default function SessionQRClientView({
                   <Bell className="h-5 w-5" />
                   <span>Alerts</span>
                 </div>
-                <span className="px-2 py-0.5 rounded-full bg-error-container text-on-error-container font-caption text-caption font-bold">
-                  3
-                </span>
+                {openAlertCount > 0 && (
+                  <span className="px-2 py-0.5 rounded-full bg-error-container text-on-error-container font-caption text-caption font-bold">
+                    {openAlertCount}
+                  </span>
+                )}
               </Link>
 
               <Link
@@ -266,9 +269,7 @@ export default function SessionQRClientView({
 
           <div className="flex items-center justify-between gap-2 pt-1">
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-8 h-8 rounded-full bg-primary-container text-on-primary flex items-center justify-center font-bold text-caption flex-shrink-0">
-                M
-              </div>
+              <ProfilePhoto variant="initial" />
               <div className="flex flex-col min-w-0">
                 <span className="font-label-md text-label-md font-semibold text-on-surface truncate">
                   Michael Dev Test
@@ -307,15 +308,15 @@ export default function SessionQRClientView({
               >
                 <Bell className="h-5 w-5" />
               </Link>
-              <span className="absolute top-2 right-2 w-2.5 h-2.5 rounded-full bg-error ring-2 ring-surface-container-lowest"></span>
+              {openAlertCount > 0 && (
+                <span className="absolute top-2 right-2 w-2.5 h-2.5 rounded-full bg-error ring-2 ring-surface-container-lowest"></span>
+              )}
             </div>
 
             <div className="h-8 w-[1px] bg-surface-container-high hidden sm:block"></div>
 
             <div className="hidden sm:flex items-center gap-2.5 p-1.5 pl-2 pr-3.5 rounded-full bg-surface-container-low hover:bg-surface-container transition-colors">
-              <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-on-primary shadow-sm flex-shrink-0">
-                <User className="h-4 w-4" />
-              </div>
+              <ProfilePhoto variant="icon" />
               <div className="flex flex-col text-left">
                 <span className="font-label-md text-label-md text-on-surface font-semibold leading-tight">
                   Michael Dev Test

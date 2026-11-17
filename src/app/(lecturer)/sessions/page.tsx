@@ -1,4 +1,6 @@
-import { createClient } from "@/lib/supabase/server";
+import { ProfilePhoto } from "@/components/lecturer/profile-photo";
+import { AttendMark } from "@/components/brand/attend-mark";
+import { getLecturer, getLecturerRecord } from "@/lib/lecturer/session";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import {
@@ -7,13 +9,11 @@ import {
   BookOpen,
   Clock,
   DoorClosed,
-  GraduationCap,
   LayoutGrid,
   LogOut,
   MapPin,
   Plus,
   Settings,
-  User,
 } from "lucide-react";
 import { signOutAction } from "@/app/auth/actions";
 import HeaderSearch from "@/components/lecturer/header-search";
@@ -22,6 +22,7 @@ export const dynamic = "force-dynamic";
 
 type SessionRow = {
   id: string;
+  class_id: string;
   title: string;
   starts_at: string;
   ends_at: string;
@@ -53,19 +54,30 @@ function phase(row: SessionRow, now: number) {
   return "Live";
 }
 
-export default async function SessionsPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+export default async function SessionsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ class?: string }>;
+}) {
+  const { class: classFilter } = await searchParams;
+  const { supabase, user } = await getLecturer();
   if (!user) redirect("/login");
 
-  const { data: profileData } = await supabase
-    .from("lecturers")
-    .select("full_name, campus")
-    .eq("id", user.id)
-    .single();
-  const profile = profileData as { full_name?: string; campus?: string } | null;
+  const [{ profile }, { data: classRows }, { count: openAlerts }, { data: rawSessions }] =
+    await Promise.all([
+      getLecturerRecord(),
+      supabase.from("classes").select("id, code").eq("lecturer_id", user.id).order("code"),
+      supabase
+        .from("alerts")
+        .select("id, sessions!inner(lecturer_id)", { count: "exact", head: true })
+        .eq("sessions.lecturer_id", user.id)
+        .eq("status", "new"),
+      supabase
+        .from("sessions")
+        .select("id, class_id, title, starts_at, ends_at, venue_name, status, classes(code, title)")
+        .eq("lecturer_id", user.id)
+        .order("starts_at", { ascending: false }),
+    ]);
   const fullName =
     profile?.full_name ||
     (user.user_metadata?.full_name as string) ||
@@ -73,24 +85,13 @@ export default async function SessionsPage() {
     "Lecturer";
   const campusName = profile?.campus || "Campus";
 
-  const { count: classesCount } = await supabase
-    .from("classes")
-    .select("id", { count: "exact", head: true })
-    .eq("lecturer_id", user.id);
-
-  const { count: openAlerts } = await supabase
-    .from("alerts")
-    .select("id, sessions!inner(lecturer_id)", { count: "exact", head: true })
-    .eq("sessions.lecturer_id", user.id)
-    .eq("status", "new");
-
-  const { data: rawSessions } = await supabase
-    .from("sessions")
-    .select("id, title, starts_at, ends_at, venue_name, status, classes(code, title)")
-    .eq("lecturer_id", user.id)
-    .order("starts_at", { ascending: false });
-
+  const courseList = classRows ?? [];
+  const classesCount = courseList.length;
   const sessions = (rawSessions as unknown as SessionRow[]) || [];
+  const selectedClassId = courseList.some((course) => course.id === classFilter) ? classFilter : "";
+  const visibleSessions = selectedClassId
+    ? sessions.filter((session) => session.class_id === selectedClassId)
+    : sessions;
   const now = new Date().getTime();
 
   const linkClass =
@@ -101,9 +102,7 @@ export default async function SessionsPage() {
       <aside className="fixed top-0 left-0 z-50 hidden h-full w-72 flex-col justify-between border-r border-surface-container-high bg-surface-container-lowest shadow-[0_1px_8px_rgba(0,0,0,0.04)] md:flex">
         <div>
           <div className="flex h-16 items-center gap-3 border-b border-surface-container-high px-6">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-on-primary shadow-sm">
-              <GraduationCap className="h-5 w-5" />
-            </div>
+            <AttendMark />
             <div className="flex flex-col">
               <span className="font-title-lg text-title-lg font-bold tracking-tight text-primary">Attend Pal</span>
               <span className="font-caption text-caption text-secondary">Lecturer Portal</span>
@@ -136,9 +135,11 @@ export default async function SessionsPage() {
                 <Bell className="h-5 w-5" />
                 Alerts
               </span>
-              <span className="rounded-full bg-error-container px-2 py-0.5 font-caption text-caption font-bold text-on-error-container">
-                {openAlerts ?? 0}
-              </span>
+              {(openAlerts ?? 0) > 0 && (
+                <span className="rounded-full bg-error-container px-2 py-0.5 font-caption text-caption font-bold text-on-error-container">
+                  {openAlerts}
+                </span>
+              )}
             </Link>
             <Link href="/reports" className={linkClass}>
               <BarChart3 className="h-5 w-5" />
@@ -162,9 +163,7 @@ export default async function SessionsPage() {
           </div>
           <div className="flex items-center justify-between gap-2">
             <div className="flex min-w-0 items-center gap-2.5">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-container font-caption font-bold text-on-primary">
-                {fullName.charAt(0)}
-              </div>
+              <ProfilePhoto variant="initial" initial={fullName.charAt(0)} />
               <div className="min-w-0">
                 <span className="block truncate font-label-md text-label-md font-semibold text-on-surface">{fullName}</span>
                 <span className="block truncate font-caption text-[11px] text-secondary">{user.email}</span>
@@ -187,9 +186,7 @@ export default async function SessionsPage() {
               <Bell className="h-5 w-5" />
             </Link>
             <div className="hidden items-center gap-2.5 rounded-full bg-surface-container-low py-1.5 pr-3.5 pl-2 sm:flex">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-on-primary">
-                <User className="h-4 w-4" />
-              </div>
+              <ProfilePhoto variant="icon" />
               <span className="font-label-md text-label-md font-semibold text-on-surface">{fullName}</span>
             </div>
           </div>
@@ -207,6 +204,26 @@ export default async function SessionsPage() {
             </Link>
           </div>
 
+          {courseList.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <Link
+                href="/sessions"
+                className={`rounded-full px-3 py-1.5 font-label-md text-label-md font-semibold ${selectedClassId ? "bg-surface-container-lowest text-secondary" : "bg-primary text-on-primary"}`}
+              >
+                All classes
+              </Link>
+              {courseList.map((course) => (
+                <Link
+                  key={course.id}
+                  href={`/sessions?class=${course.id}`}
+                  className={`rounded-full px-3 py-1.5 font-label-md text-label-md font-semibold ${selectedClassId === course.id ? "bg-primary text-on-primary" : "bg-surface-container-lowest text-secondary"}`}
+                >
+                  {course.code}
+                </Link>
+              ))}
+            </div>
+          )}
+
           <section className="rounded-2xl border border-surface-container-high bg-surface-container-lowest p-6 shadow-sm">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[760px] border-collapse text-left">
@@ -221,14 +238,16 @@ export default async function SessionsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-surface-container-high font-body-md text-label-md text-on-surface">
-                  {sessions.length === 0 ? (
+                  {visibleSessions.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="px-4 py-10 text-center text-secondary">
-                        No sessions yet. Create one when the class is about to start.
+                        {selectedClassId
+                          ? "No sessions for this class yet."
+                          : "No sessions yet. Create one when the class is about to start."}
                       </td>
                     </tr>
                   ) : (
-                    sessions.map((session) => {
+                    visibleSessions.map((session) => {
                       const course = courseOf(session);
                       const when = whenLabel(session.starts_at, session.ends_at);
                       const status = phase(session, now);

@@ -1,5 +1,7 @@
 "use client";
 
+import { AttendMark } from "@/components/brand/attend-mark";
+
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import jsQR from "jsqr";
@@ -13,7 +15,6 @@ import {
   Monitor,
   ScanQrCode,
   School,
-  ShieldCheck,
   X,
 } from "lucide-react";
 
@@ -119,9 +120,7 @@ export default function LinkInactiveView({
     <div className="flex flex-col pb-8">
       <header className="flex h-16 items-center justify-between px-4 shadow-[0_1px_8px_rgba(0,0,0,0.03)]">
         <div className="flex items-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-on-primary shadow-sm">
-            <ShieldCheck className="h-5 w-5" />
-          </div>
+          <AttendMark className="h-9 w-9 rounded-xl" />
           <div>
             <p className="font-title-md text-title-md leading-none tracking-tight">Attend Pal</p>
             <p className="mt-0.5 font-caption text-caption leading-tight text-secondary">Campus Verification Kiosk</p>

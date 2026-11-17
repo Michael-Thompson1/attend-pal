@@ -1,33 +1,32 @@
-import { createClient } from "@/lib/supabase/server";
+import { getLecturer, getLecturerRecord, getOpenAlertCount } from "@/lib/lecturer/session";
 import { redirect } from "next/navigation";
 import ClassesClientView, {
   type ClassItem,
+  type ClassSession,
   type StudentRecord,
 } from "@/components/lecturer/classes-client-view";
 
 export default async function ClassesPage() {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { supabase, user } = await getLecturer();
 
   if (!user) {
     redirect("/login");
   }
 
-  // Fetch lecturer profile
-  const { data: profileData } = await supabase
-    .from("lecturers")
-    .select("full_name, institution, campus")
-    .eq("id", user.id)
-    .single();
-
-  const profile = profileData as {
-    full_name?: string;
-    institution?: string;
-    campus?: string;
-  } | null;
+  const [{ profile }, { data: rawClasses }, { data: rawSessions }, openAlertCount] = await Promise.all([
+    getLecturerRecord(),
+    supabase
+      .from("classes")
+      .select("id, code, title, semester, programme, default_venue, created_at")
+      .eq("lecturer_id", user.id)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("sessions")
+      .select("id, class_id, title, starts_at, ends_at, venue_name, status")
+      .eq("lecturer_id", user.id)
+      .order("starts_at", { ascending: false }),
+    getOpenAlertCount(),
+  ]);
 
   const fullName =
     profile?.full_name ||
@@ -35,17 +34,8 @@ export default async function ClassesPage() {
     user.email?.split("@")[0] ||
     "Lecturer";
   const firstName = fullName.split(" ")[0];
-  const institutionName =
-    profile?.institution || "Faculty of Science";
-  const campusName =
-    profile?.campus || "UCC Main Campus • North Wing";
-
-  // Fetch lecturer's classes
-  const { data: rawClasses } = await supabase
-    .from("classes")
-    .select("id, code, title, semester, programme, default_venue, created_at")
-    .eq("lecturer_id", user.id)
-    .order("created_at", { ascending: false });
+  const institutionName = profile?.institution || "Faculty of Science";
+  const campusName = profile?.campus || "UCC Main Campus • North Wing";
 
   const classes: ClassItem[] = (rawClasses as unknown as ClassItem[]) || [];
 
@@ -65,6 +55,8 @@ export default async function ClassesPage() {
     <ClassesClientView
       initialClasses={classes}
       initialStudents={students}
+      initialSessions={(rawSessions as unknown as ClassSession[]) || []}
+      openAlertCount={openAlertCount}
       userProfile={{
         fullName,
         firstName,

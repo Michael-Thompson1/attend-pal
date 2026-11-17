@@ -1,5 +1,5 @@
+import { getLecturer, getOpenAlertCount } from "@/lib/lecturer/session";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
 import {
   getSessionDetailsAction,
   getSessionAttendanceAction,
@@ -33,20 +33,17 @@ export default async function SessionMonitorPage({
   params,
 }: SessionMonitorPageProps) {
   const { id } = await params;
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { user } = await getLecturer();
 
   if (!user) {
     redirect("/login");
   }
 
-  const [session, initialAttendance, initialAlerts] = await Promise.all([
+  const [session, initialAttendance, initialAlerts, openAlertCount] = await Promise.all([
     getSessionDetailsAction(id),
     getSessionAttendanceAction(id),
     getSessionAlertsAction(id),
+    getOpenAlertCount(),
   ]);
 
   const sessionData = session
@@ -74,6 +71,7 @@ export default async function SessionMonitorPage({
       session={sessionData}
       initialAttendance={initialAttendance}
       initialAlerts={initialAlerts}
+      openAlertCount={openAlertCount}
     />
   );
 }

@@ -1,6 +1,6 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
+import { getLecturer } from "@/lib/lecturer/session";
 
 export type SearchHit = {
   kind: "Class" | "Session" | "Student";
@@ -13,10 +13,7 @@ export async function searchPortalAction(query: string): Promise<SearchHit[]> {
   const safe = query.trim().replace(/[%_,]/g, "");
   if (safe.length < 2) return [];
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { supabase, user } = await getLecturer();
   if (!user) return [];
 
   const pattern = `%${safe}%`;

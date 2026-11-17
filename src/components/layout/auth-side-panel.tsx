@@ -1,3 +1,4 @@
+import { AttendMark } from "@/components/brand/attend-mark";
 import React from "react";
 import {
   ShieldCheck,
@@ -41,9 +42,7 @@ export function AuthSidePanel() {
       {/* Top Header & Brand Identity */}
       <div className="relative z-10 space-y-6">
         <div className="flex items-center space-x-3.5">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-surface-container-lowest text-primary shadow-md">
-            <GraduationCap className="h-7 w-7 text-primary" />
-          </div>
+          <AttendMark className="h-12 w-12 rounded-xl shadow-md" iconClassName="h-7 w-7" tone="inverse" />
           <div>
             <div className="flex items-center space-x-2">
               <span className="font-headline-sm text-headline-sm font-bold tracking-tight text-on-primary">

@@ -1,5 +1,5 @@
+import { getLecturerPhotoUrl, getLecturerRecord, getOpenAlertCount } from "@/lib/lecturer/session";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
 import SettingsClientView, {
   type SettingsViewData,
 } from "@/components/lecturer/settings-client-view";
@@ -20,20 +20,13 @@ function formatUpdated(iso: string) {
 }
 
 export default async function SettingsPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { supabase, user, profile } = await getLecturerRecord();
 
   if (!user) {
     redirect("/login");
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("lecturers")
-    .select("full_name, institution, campus, photo_path")
-    .eq("id", user.id)
-    .maybeSingle();
+  const photoPromise = getLecturerPhotoUrl();
 
   let { data: settings, error: settingsError } = await supabase
     .from("lecturer_settings")
@@ -55,8 +48,8 @@ export default async function SettingsPage() {
     settingsError = inserted.error;
   }
 
-  if (profileError || settingsError || !settings) {
-    const detail = `${profileError?.message ?? ""} ${settingsError?.message ?? ""}`;
+  if (settingsError || !settings) {
+    const detail = settingsError?.message ?? "";
     const needsMigration = /column|schema cache|photo_path|email_/i.test(detail);
     return (
       <main className="mx-auto flex min-h-screen max-w-xl flex-col justify-center gap-3 px-6">
@@ -72,13 +65,7 @@ export default async function SettingsPage() {
     );
   }
 
-  let photoUrl: string | null = null;
-  if (profile?.photo_path) {
-    const { data: signed } = await supabase.storage
-      .from("lecturer-photos")
-      .createSignedUrl(profile.photo_path, 60 * 60);
-    photoUrl = signed?.signedUrl ?? null;
-  }
+  const [photoUrl, openAlertCount] = await Promise.all([photoPromise, getOpenAlertCount()]);
 
   const fullName =
     profile?.full_name ||
@@ -100,6 +87,7 @@ export default async function SettingsPage() {
     emailSharedDevice: settings.email_shared_device,
     emailSessionSummary: settings.email_session_summary,
     updatedLabel: formatUpdated(settings.updated_at),
+    openAlertCount,
   };
 
   return <SettingsClientView data={data} />;

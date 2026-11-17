@@ -1,5 +1,7 @@
 "use client";
 
+import { AttendMark } from "@/components/brand/attend-mark";
+
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import LinkInactiveView from "@/components/student/link-inactive-view";
 import {
@@ -433,9 +435,7 @@ function Landing({
   return (
     <div className="flex flex-col space-y-4 px-4 pb-8">
       <header className="flex flex-col items-center pt-2 pb-1">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-on-primary">
-          <BadgeCheck className="h-5 w-5" />
-        </div>
+        <AttendMark />
         <span className="mt-2 font-title-md text-title-md text-primary">Attend Pal</span>
         <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-surface-container-high px-3 py-1">
           <span className="h-2 w-2 rounded-full bg-tertiary" />
@@ -1316,9 +1316,7 @@ function MarkedPresent({
     <div className="flex flex-col pb-8">
       <header className="flex h-16 items-center justify-between px-4">
         <div className="flex items-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-on-primary shadow-sm">
-            <ShieldCheck className="h-5 w-5" />
-          </div>
+          <AttendMark className="h-9 w-9 rounded-xl" />
           <div>
             <p className="font-title-md text-title-md leading-none tracking-tight">Attend Pal</p>
             <p className="mt-0.5 font-caption text-caption leading-tight text-secondary">Campus Verification Kiosk</p>

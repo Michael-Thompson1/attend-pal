@@ -1,5 +1,5 @@
+import { getLecturer } from "@/lib/lecturer/session";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
 import AlertsClientView from "@/components/lecturer/alerts-client-view";
 import {
   getAllAlertsAction,
@@ -9,10 +9,7 @@ import {
 export const dynamic = "force-dynamic";
 
 export default async function AlertsPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { user } = await getLecturer();
 
   if (!user) {
     redirect("/login");

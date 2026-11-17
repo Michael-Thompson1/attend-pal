@@ -1,7 +1,7 @@
+import { getLecturer, getOpenAlertCount } from "@/lib/lecturer/session";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import QRCode from "qrcode";
-import { createClient } from "@/lib/supabase/server";
 import { getSessionDetailsAction } from "../../actions";
 import SessionQRClientView from "@/components/lecturer/session-qr-client-view";
 
@@ -35,11 +35,7 @@ interface SessionQRPageProps {
 
 export default async function SessionQRPage({ params }: SessionQRPageProps) {
   const { id } = await params;
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { user } = await getLecturer();
 
   if (!user) {
     redirect("/login");
@@ -50,7 +46,10 @@ export default async function SessionQRPage({ params }: SessionQRPageProps) {
   const protocol = headerList.get("x-forwarded-proto") || "http";
   const baseUrl = `${protocol}://${host}`;
 
-  const session = await getSessionDetailsAction(id);
+  const [session, openAlertCount] = await Promise.all([
+    getSessionDetailsAction(id),
+    getOpenAlertCount(),
+  ]);
 
   // If session not found in database (e.g. previewing / testing), provide demo fallback
   const sessionData = session || {
@@ -64,5 +63,12 @@ export default async function SessionQRPage({ params }: SessionQRPageProps) {
     errorCorrectionLevel: "M",
   });
 
-  return <SessionQRClientView session={sessionData} baseUrl={baseUrl} qrDataUrl={qrDataUrl} />;
+  return (
+    <SessionQRClientView
+      session={sessionData}
+      baseUrl={baseUrl}
+      qrDataUrl={qrDataUrl}
+      openAlertCount={openAlertCount}
+    />
+  );
 }

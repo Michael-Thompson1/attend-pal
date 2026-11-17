@@ -1,10 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { ProfilePhoto } from "@/components/lecturer/profile-photo";
+
+import { AttendMark } from "@/components/brand/attend-mark";
+
+import { useState, useTransition } from "react";
 import Link from "next/link";
 import HeaderSearch from "@/components/lecturer/header-search";
 import {
-  GraduationCap,
   LayoutGrid,
   BookOpen,
   Clock,
@@ -13,37 +16,32 @@ import {
   Settings,
   MapPin,
   Search,
-  User,
   Download,
   CloudUpload,
   ChevronRight,
   ChevronLeft,
   ChevronsLeft,
   ChevronsRight,
-  Check,
   CheckCircle2,
   AlertTriangle,
   DoorClosed,
   Pencil,
   IdCard,
   Camera,
+  Trash2,
   X,
-  Image as ImageIcon,
-  ImageOff,
-  ArrowRight,
-  ArrowLeft,
-  Info,
   LogOut,
-  Paperclip,
-  Sparkles,
   Plus,
 } from "lucide-react";
 import { signOutAction } from "@/app/auth/actions";
+import { ClassImportDialog } from "@/components/lecturer/class-import-dialog";
 import {
   createClassAction,
-  importRosterAction,
+  deleteClassAction,
+  deleteSessionAction,
+  deleteStudentAction,
   getClassStudentsAction,
-  type StudentInput,
+  updateClassAction,
 } from "@/app/(lecturer)/classes/actions";
 
 export interface ClassItem {
@@ -54,6 +52,16 @@ export interface ClassItem {
   programme: string | null;
   default_venue: string | null;
   created_at: string;
+}
+
+export interface ClassSession {
+  id: string;
+  class_id: string;
+  title: string;
+  starts_at: string;
+  ends_at: string;
+  venue_name: string | null;
+  status: "open" | "closed";
 }
 
 export interface StudentRecord {
@@ -71,6 +79,8 @@ export interface StudentRecord {
 interface ClassesClientViewProps {
   initialClasses: ClassItem[];
   initialStudents: StudentRecord[];
+  initialSessions: ClassSession[];
+  openAlertCount?: number;
   userProfile: {
     fullName: string;
     firstName: string;
@@ -80,9 +90,198 @@ interface ClassesClientViewProps {
   };
 }
 
+function NewClassForm({
+  onCreated,
+  onCancel,
+}: {
+  onCreated: (item: ClassItem) => void;
+  onCancel?: () => void;
+}) {
+  const [code, setCode] = useState("");
+  const [title, setTitle] = useState("");
+  const [semester, setSemester] = useState("");
+  const [programme, setProgramme] = useState("");
+  const [venue, setVenue] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+
+  function create() {
+    setError(null);
+    startTransition(async () => {
+      const result = await createClassAction({
+        code,
+        title,
+        semester,
+        programme,
+        default_venue: venue,
+      });
+      if (result.error || !result.classId) {
+        setError(result.error || "Could not create the class.");
+        return;
+      }
+      onCreated({
+        id: result.classId,
+        code: code.trim().toUpperCase(),
+        title: title.trim(),
+        semester: semester.trim() || "Current semester",
+        programme: programme.trim() || null,
+        default_venue: venue.trim() || null,
+        created_at: new Date().toISOString(),
+      });
+    });
+  }
+
+  return (
+    <section className="flex max-w-2xl flex-col gap-4 rounded-2xl border border-surface-container-high bg-surface-container-lowest p-6 shadow-sm">
+      <div>
+        <h2 className="font-title-lg text-title-lg font-semibold text-on-surface">New class</h2>
+        <p className="font-body-md text-body-md text-secondary">
+          Add another course on this account. Each class keeps its own roster, sessions, and attendance.
+        </p>
+      </div>
+      <label className="flex flex-col gap-1.5">
+        <span className="font-label-md text-label-md font-semibold">Course code</span>
+        <input value={code} onChange={(event) => setCode(event.target.value)} placeholder="INF313" className="h-11 rounded-xl bg-surface-container-low px-4 font-label-md text-label-md outline-none focus:ring-2 focus:ring-primary/20" />
+      </label>
+      <label className="flex flex-col gap-1.5">
+        <span className="font-label-md text-label-md font-semibold">Course title</span>
+        <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Web Technology 2" className="h-11 rounded-xl bg-surface-container-low px-4 font-label-md text-label-md outline-none focus:ring-2 focus:ring-primary/20" />
+      </label>
+      <label className="flex flex-col gap-1.5">
+        <span className="font-label-md text-label-md font-semibold">Semester</span>
+        <input value={semester} onChange={(event) => setSemester(event.target.value)} placeholder="Semester 21 2026/2027" className="h-11 rounded-xl bg-surface-container-low px-4 font-label-md text-label-md outline-none focus:ring-2 focus:ring-primary/20" />
+      </label>
+      <label className="flex flex-col gap-1.5">
+        <span className="font-label-md text-label-md font-semibold">Programme</span>
+        <input value={programme} onChange={(event) => setProgramme(event.target.value)} placeholder="BSc Computer Science" className="h-11 rounded-xl bg-surface-container-low px-4 font-label-md text-label-md outline-none focus:ring-2 focus:ring-primary/20" />
+      </label>
+      <label className="flex flex-col gap-1.5">
+        <span className="font-label-md text-label-md font-semibold">Default venue</span>
+        <input value={venue} onChange={(event) => setVenue(event.target.value)} placeholder="NLT 8" className="h-11 rounded-xl bg-surface-container-low px-4 font-label-md text-label-md outline-none focus:ring-2 focus:ring-primary/20" />
+      </label>
+      {error && <p className="font-body-md text-body-md text-error">{error}</p>}
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={create}
+          disabled={isPending || !code.trim() || !title.trim()}
+          className="inline-flex h-11 items-center gap-2 rounded-xl bg-primary px-5 font-label-lg text-label-md font-semibold text-on-primary disabled:opacity-60"
+        >
+          <Plus className="h-4 w-4" />
+          {isPending ? "Creating..." : "Create class"}
+        </button>
+        {onCancel && (
+          <button type="button" onClick={onCancel} className="h-11 rounded-xl px-4 font-label-md text-label-md font-semibold text-secondary hover:bg-surface-container">
+            Cancel
+          </button>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function ClassSettingsForm({
+  classItem,
+  onSaved,
+  onDelete,
+  deleting,
+}: {
+  classItem: ClassItem;
+  onSaved: (next: ClassItem) => void;
+  onDelete: () => void;
+  deleting: boolean;
+}) {
+  const [code, setCode] = useState(classItem.code);
+  const [title, setTitle] = useState(classItem.title);
+  const [semester, setSemester] = useState(classItem.semester);
+  const [programme, setProgramme] = useState(classItem.programme || "");
+  const [venue, setVenue] = useState(classItem.default_venue || "");
+  const [message, setMessage] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+
+  function save() {
+    setMessage(null);
+    startTransition(async () => {
+      const result = await updateClassAction(classItem.id, {
+        code,
+        title,
+        semester,
+        programme,
+        default_venue: venue,
+      });
+      if (result.error) {
+        setMessage(result.error);
+        return;
+      }
+      onSaved({
+        ...classItem,
+        code: code.trim().toUpperCase(),
+        title: title.trim(),
+        semester: semester.trim() || classItem.semester,
+        programme: programme.trim() || null,
+        default_venue: venue.trim() || null,
+      });
+      setMessage("Class settings saved.");
+    });
+  }
+
+  return (
+    <section className="flex max-w-2xl flex-col gap-4 rounded-2xl border border-surface-container-high bg-surface-container-lowest p-6 shadow-sm">
+      <div>
+        <h2 className="font-title-lg text-title-lg font-semibold text-on-surface">Class settings</h2>
+        <p className="font-body-md text-body-md text-secondary">
+          These details belong to {classItem.code} only. Other courses keep their own roster and sessions.
+        </p>
+      </div>
+      <label className="flex flex-col gap-1.5">
+        <span className="font-label-md text-label-md font-semibold">Course code</span>
+        <input value={code} onChange={(event) => setCode(event.target.value)} className="h-11 rounded-xl bg-surface-container-low px-4 font-label-md text-label-md outline-none focus:ring-2 focus:ring-primary/20" />
+      </label>
+      <label className="flex flex-col gap-1.5">
+        <span className="font-label-md text-label-md font-semibold">Course title</span>
+        <input value={title} onChange={(event) => setTitle(event.target.value)} className="h-11 rounded-xl bg-surface-container-low px-4 font-label-md text-label-md outline-none focus:ring-2 focus:ring-primary/20" />
+      </label>
+      <label className="flex flex-col gap-1.5">
+        <span className="font-label-md text-label-md font-semibold">Semester</span>
+        <input value={semester} onChange={(event) => setSemester(event.target.value)} className="h-11 rounded-xl bg-surface-container-low px-4 font-label-md text-label-md outline-none focus:ring-2 focus:ring-primary/20" />
+      </label>
+      <label className="flex flex-col gap-1.5">
+        <span className="font-label-md text-label-md font-semibold">Programme</span>
+        <input value={programme} onChange={(event) => setProgramme(event.target.value)} className="h-11 rounded-xl bg-surface-container-low px-4 font-label-md text-label-md outline-none focus:ring-2 focus:ring-primary/20" />
+      </label>
+      <label className="flex flex-col gap-1.5">
+        <span className="font-label-md text-label-md font-semibold">Default venue</span>
+        <input value={venue} onChange={(event) => setVenue(event.target.value)} className="h-11 rounded-xl bg-surface-container-low px-4 font-label-md text-label-md outline-none focus:ring-2 focus:ring-primary/20" />
+      </label>
+      {message && <p className="font-body-md text-body-md text-secondary">{message}</p>}
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={save}
+          disabled={isPending}
+          className="inline-flex h-11 w-fit items-center rounded-xl bg-primary-container px-5 font-label-lg text-label-md font-semibold text-on-primary disabled:opacity-60"
+        >
+          {isPending ? "Saving..." : "Save class settings"}
+        </button>
+        <button
+          type="button"
+          onClick={onDelete}
+          disabled={deleting}
+          className="inline-flex h-11 items-center gap-2 rounded-xl border border-error/30 px-4 font-label-md text-label-md font-semibold text-error hover:bg-error-container/30 disabled:opacity-60"
+        >
+          <Trash2 className="h-4 w-4" />
+          {deleting ? "Deleting..." : "Delete this class"}
+        </button>
+      </div>
+    </section>
+  );
+}
+
 export default function ClassesClientView({
   initialClasses,
   initialStudents,
+  initialSessions,
+  openAlertCount = 0,
   userProfile,
 }: ClassesClientViewProps) {
   const [classes, setClasses] = useState<ClassItem[]>(initialClasses);
@@ -90,6 +289,8 @@ export default function ClassesClientView({
     initialClasses[0]?.id || ""
   );
   const [students, setStudents] = useState<StudentRecord[]>(initialStudents);
+  const [sessions, setSessions] = useState<ClassSession[]>(initialSessions);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"roster" | "sessions" | "settings">("roster");
   const [searchQuery, setSearchQuery] = useState("");
   const [programmeFilter, setProgrammeFilter] = useState("all");
@@ -97,14 +298,13 @@ export default function ClassesClientView({
 
   // Modal & CSV Import state
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [importingState, setImportingState] = useState<"idle" | "importing" | "done">("idle");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [isCreatingClass, setIsCreatingClass] = useState(false);
-  const [newCourseCode] = useState("INF212");
-  const [newCourseTitle] = useState("Data Structures & Algorithms");
+  const [showNewClass, setShowNewClass] = useState(false);
 
   const selectedClass =
     classes.find((c) => c.id === selectedClassId) || classes[0] || null;
+  const classSessions = sessions.filter((session) => session.class_id === selectedClass?.id);
+  const now = new Date().getTime();
 
   // Handle class selection
   const handleSelectClass = async (classId: string) => {
@@ -115,73 +315,70 @@ export default function ClassesClientView({
     }
   };
 
-  // Quick initialize default class if none exist
-  const handleQuickCreateClass = async () => {
-    setIsCreatingClass(true);
+  async function removeStudent(student: StudentRecord) {
+    const confirmed = window.confirm(`Remove ${student.full_name} from this class? Their attendance records for this class will be removed too.`);
+    if (!confirmed) return;
+    setDeletingId(student.id);
     setStatusMessage(null);
-    const res = await createClassAction({
-      code: newCourseCode,
-      title: newCourseTitle,
-      semester: "Semester 2, 2024/2025",
-      programme: "BSc Computer Science",
-      default_venue: "Lecture Hall B",
-    });
-
-    if (res.classId) {
-      const newClass: ClassItem = {
-        id: res.classId,
-        code: newCourseCode.trim().toUpperCase(),
-        title: newCourseTitle.trim(),
-        semester: "Semester 2, 2024/2025",
-        programme: "BSc Computer Science",
-        default_venue: "Lecture Hall B",
-        created_at: new Date().toISOString(),
-      };
-      setClasses([newClass, ...classes]);
-      setSelectedClassId(res.classId);
-
-      // Seed 4 initial students for testing
-      const sampleSeed: StudentInput[] = [
-        {
-          indexNumber: "20234102",
-          fullName: "Sarah Mensah",
-          email: "s.mensah@stu.ucc.edu.gh",
-          programme: "BSc Computer Science",
-          level: "Level 200",
-        },
-        {
-          indexNumber: "20239021",
-          fullName: "Ama Asante",
-          email: "a.asante@stu.ucc.edu.gh",
-          programme: "BSc Computer Science",
-          level: "Level 200",
-        },
-        {
-          indexNumber: "20231894",
-          fullName: "Kofi Boateng",
-          email: "k.boateng@stu.ucc.edu.gh",
-          programme: "BSc Computer Science",
-          level: "Level 200",
-        },
-        {
-          indexNumber: "20230812",
-          fullName: "Emmanuel Darko",
-          email: "e.darko@stu.ucc.edu.gh",
-          programme: "BSc Computer Engineering",
-          level: "Level 200",
-        },
-      ];
-      await importRosterAction(res.classId, sampleSeed);
-      const { students: loaded } = await getClassStudentsAction(res.classId);
-      if (loaded) {
-        setStudents(loaded);
-      }
-      setStatusMessage(`Course cohort ${newCourseCode} initialized successfully!`);
-    } else if (res.error) {
-      setStatusMessage(`Error: ${res.error}`);
+    const result = await deleteStudentAction(student.id);
+    setDeletingId(null);
+    if (result.error) {
+      setStatusMessage(result.error);
+      return;
     }
-    setIsCreatingClass(false);
-  };
+    setStudents((current) => current.filter((item) => item.id !== student.id));
+  }
+
+  async function removeSession(session: ClassSession) {
+    const confirmed = window.confirm(`Delete the session “${session.title}”? Its attendance record will be removed too.`);
+    if (!confirmed) return;
+    setDeletingId(session.id);
+    setStatusMessage(null);
+    const result = await deleteSessionAction(session.id);
+    setDeletingId(null);
+    if (result.error) {
+      setStatusMessage(result.error);
+      return;
+    }
+    setSessions((current) => current.filter((item) => item.id !== session.id));
+  }
+
+  async function removeClass(course: ClassItem) {
+    const confirmed = window.confirm(
+      `Delete ${course.code} ${course.title}? Students, sessions, attendance, and alerts for this class will be removed. Your lecturer account stays.`,
+    );
+    if (!confirmed) return;
+    setDeletingId(course.id);
+    setStatusMessage(null);
+    const result = await deleteClassAction(course.id);
+    setDeletingId(null);
+    if (result.error) {
+      setStatusMessage(result.error);
+      return;
+    }
+    const remaining = classes.filter((item) => item.id !== course.id);
+    setClasses(remaining);
+    setSessions((current) => current.filter((item) => item.class_id !== course.id));
+    if (remaining[0]) {
+      setSelectedClassId(remaining[0].id);
+      const { students: loaded } = await getClassStudentsAction(remaining[0].id);
+      setStudents(loaded || []);
+    } else {
+      setSelectedClassId("");
+      setStudents([]);
+      setShowNewClass(true);
+    }
+    setStatusMessage(`${course.code} deleted.`);
+  }
+
+  function handleClassCreated(item: ClassItem) {
+    setClasses((current) => [item, ...current.filter((course) => course.id !== item.id)]);
+    setSelectedClassId(item.id);
+    setStudents([]);
+    setShowNewClass(false);
+    setActiveTab("roster");
+    setStatusMessage(`${item.code} is ready. Import a class list when you have one.`);
+  }
 
   // CSV Export
   const handleExportRoster = () => {
@@ -200,60 +397,6 @@ export default function ClassesClientView({
     link.download = `${selectedClass?.code || "roster"}_students.csv`;
     link.click();
     URL.revokeObjectURL(url);
-  };
-
-  // CSV Import in modal
-  const handleFinalizeImport = async () => {
-    if (!selectedClass) return;
-    setImportingState("importing");
-
-    const sampleRoster: StudentInput[] = [
-      {
-        indexNumber: "20234102",
-        fullName: "Sarah Mensah",
-        email: "s.mensah@stu.ucc.edu.gh",
-        programme: "BSc Computer Science",
-        level: "Level 200",
-      },
-      {
-        indexNumber: "20239021",
-        fullName: "Ama Asante",
-        email: "a.asante@stu.ucc.edu.gh",
-        programme: "BSc Computer Science",
-        level: "Level 200",
-      },
-      {
-        indexNumber: "20231894",
-        fullName: "Kofi Boateng",
-        email: "k.boateng@stu.ucc.edu.gh",
-        programme: "BSc Computer Science",
-        level: "Level 200",
-      },
-      {
-        indexNumber: "20230812",
-        fullName: "Emmanuel Darko",
-        email: "e.darko@stu.ucc.edu.gh",
-        programme: "BSc Computer Engineering",
-        level: "Level 200",
-      },
-    ];
-
-    const result = await importRosterAction(selectedClass.id, sampleRoster);
-    if (!result.error) {
-      const { students: updated } = await getClassStudentsAction(selectedClass.id);
-      if (updated) {
-        setStudents(updated);
-      }
-      setImportingState("done");
-      setTimeout(() => {
-        setIsModalOpen(false);
-        setImportingState("idle");
-        setStatusMessage(`Successfully imported ${result.importedCount} student records!`);
-      }, 700);
-    } else {
-      setImportingState("idle");
-      setStatusMessage(`Import failed: ${result.error}`);
-    }
   };
 
   // Filter students
@@ -280,9 +423,7 @@ export default function ClassesClientView({
         <div className="flex flex-col">
           {/* Logo & Portal Label */}
           <div className="h-16 px-6 flex items-center gap-3 border-b border-surface-container-high">
-            <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-on-primary shadow-sm">
-              <GraduationCap className="h-5 w-5" />
-            </div>
+            <AttendMark />
             <div className="flex flex-col">
               <span className="font-title-lg text-title-lg font-bold text-primary tracking-tight">
                 Attend Pal
@@ -334,9 +475,11 @@ export default function ClassesClientView({
                   <Bell className="h-5 w-5" />
                   <span>Alerts</span>
                 </div>
-                <span className="px-2 py-0.5 rounded-full bg-error-container text-on-error-container font-caption text-caption font-bold">
-                  3
-                </span>
+                {openAlertCount > 0 && (
+                  <span className="px-2 py-0.5 rounded-full bg-error-container text-on-error-container font-caption text-caption font-bold">
+                    {openAlertCount}
+                  </span>
+                )}
               </Link>
 
               <Link
@@ -379,9 +522,7 @@ export default function ClassesClientView({
 
           <div className="flex items-center justify-between gap-2 pt-1">
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-8 h-8 rounded-full bg-primary-container text-on-primary flex items-center justify-center font-bold text-caption flex-shrink-0">
-                {userProfile.firstName.charAt(0)}
-              </div>
+              <ProfilePhoto variant="initial" initial={userProfile.firstName.charAt(0)} />
               <div className="flex flex-col min-w-0">
                 <span className="font-label-md text-label-md font-semibold text-on-surface truncate">
                   {userProfile.fullName}
@@ -420,15 +561,15 @@ export default function ClassesClientView({
               >
                 <Bell className="h-5 w-5" />
               </Link>
-              <span className="absolute top-2 right-2 w-2.5 h-2.5 rounded-full bg-error ring-2 ring-surface-container-lowest"></span>
+              {openAlertCount > 0 && (
+                <span className="absolute top-2 right-2 w-2.5 h-2.5 rounded-full bg-error ring-2 ring-surface-container-lowest"></span>
+              )}
             </div>
 
             <div className="h-8 w-[1px] bg-surface-container-high hidden sm:block"></div>
 
             <div className="hidden sm:flex items-center gap-2.5 p-1.5 pl-2 pr-3.5 rounded-full bg-surface-container-low hover:bg-surface-container transition-colors">
-              <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-on-primary shadow-sm flex-shrink-0">
-                <User className="h-4 w-4" />
-              </div>
+              <ProfilePhoto variant="icon" />
               <div className="flex flex-col text-left">
                 <span className="font-label-md text-label-md text-on-surface font-semibold leading-tight">
                   {userProfile.fullName}
@@ -460,34 +601,15 @@ export default function ClassesClientView({
             </div>
           )}
 
-          {/* If No Classes in Database Yet */}
-          {classes.length === 0 && (
-            <div className="p-6 rounded-2xl bg-surface-container-lowest border border-surface-container-high shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex items-start gap-3">
-                <div className="p-2.5 rounded-xl bg-primary text-on-primary flex-shrink-0">
-                  <Sparkles className="h-6 w-6" />
-                </div>
-                <div>
-                  <h2 className="font-title-lg font-bold text-on-surface">
-                    Set up your first course cohort
-                  </h2>
-                  <p className="font-body-md text-secondary text-label-md mt-1">
-                    Initialize your course roster for this semester to register student indices and enable biometric kiosk roll-calls.
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={handleQuickCreateClass}
-                disabled={isCreatingClass}
-                className="h-11 px-5 rounded-xl bg-primary text-on-primary font-label-md font-semibold shadow-sm hover:opacity-95 transition-all flex items-center gap-2 cursor-pointer flex-shrink-0 disabled:opacity-50"
-              >
-                <Plus className="h-4 w-4" />
-                <span>{isCreatingClass ? "Setting up..." : "Initialize INF212 Course"}</span>
-              </button>
-            </div>
+          {(classes.length === 0 || showNewClass) && (
+            <NewClassForm
+              onCreated={handleClassCreated}
+              onCancel={classes.length > 0 ? () => setShowNewClass(false) : undefined}
+            />
           )}
 
+          {selectedClass && (
+          <>
           {/* Breadcrumbs */}
           <nav className="flex items-center gap-2 font-caption text-caption text-secondary">
             <Link href="/dashboard" className="hover:text-primary transition-colors">
@@ -508,10 +630,10 @@ export default function ClassesClientView({
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center gap-2.5 flex-wrap">
                 <h1 className="font-headline-lg text-headline-lg font-bold text-on-surface tracking-tight">
-                  {selectedClass ? `${selectedClass.code} ${selectedClass.title}` : "INF212 Algorithms"}
+                  {`${selectedClass.code} ${selectedClass.title}`}
                 </h1>
                 <span className="px-3 py-0.5 rounded-full bg-secondary-container text-on-secondary-container font-label-md text-label-md font-medium">
-                  {selectedClass?.semester || "Semester 2, 2024/2025"}
+                  {selectedClass.semester}
                 </span>
                 <span className="flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-surface-container-high text-primary font-caption text-caption font-semibold">
                   <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
@@ -522,11 +644,11 @@ export default function ClassesClientView({
               <p className="font-body-md text-label-md text-secondary flex items-center gap-2 flex-wrap">
                 <span>{students.length} enrolled students</span>
                 <span className="w-1 h-1 rounded-full bg-outline-variant"></span>
-                <span>{selectedClass?.programme || "BSc Computer Science"}</span>
+                <span>{selectedClass.programme || "Programme not set"}</span>
                 <span className="w-1 h-1 rounded-full bg-outline-variant"></span>
                 <span className="inline-flex items-center gap-1 text-on-surface font-medium">
                   <DoorClosed className="h-4 w-4 text-secondary" />
-                  {selectedClass?.default_venue || "Lecture Hall B (Main Campus)"}
+                  {selectedClass.default_venue || "Venue not set"}
                 </span>
               </p>
             </div>
@@ -544,8 +666,28 @@ export default function ClassesClientView({
 
               <button
                 type="button"
+                onClick={() => setShowNewClass(true)}
+                className="h-11 px-4 rounded-xl bg-surface-container-lowest text-primary shadow-sm border border-surface-container-high hover:bg-surface-container-low transition-all flex items-center gap-2 font-label-lg text-label-md font-semibold cursor-pointer"
+              >
+                <Plus className="h-4 w-4" />
+                <span>New class</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => selectedClass && removeClass(selectedClass)}
+                disabled={!selectedClass || deletingId === selectedClass.id}
+                className="h-11 px-4 rounded-xl bg-surface-container-lowest text-error shadow-sm border border-error/20 hover:bg-error-container/20 transition-all flex items-center gap-2 font-label-lg text-label-md font-semibold cursor-pointer disabled:opacity-40"
+              >
+                <Trash2 className="h-4 w-4" />
+                <span>{selectedClass && deletingId === selectedClass.id ? "Deleting..." : "Delete class"}</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setIsModalOpen(true)}
-                className="h-11 px-5 rounded-xl bg-primary-container text-on-primary shadow-sm hover:opacity-95 transition-all flex items-center gap-2 font-label-lg text-label-md font-semibold active:scale-95 cursor-pointer"
+                disabled={!selectedClass}
+                className="h-11 px-5 rounded-xl bg-primary-container text-on-primary shadow-sm hover:opacity-95 transition-all flex items-center gap-2 font-label-lg text-label-md font-semibold active:scale-95 cursor-pointer disabled:opacity-40"
               >
                 <CloudUpload className="h-4 w-4" />
                 <span>Import class list</span>
@@ -607,7 +749,7 @@ export default function ClassesClientView({
             >
               <span>Sessions</span>
               <span className="px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant font-label-md text-caption font-semibold">
-                14
+                {classSessions.length}
               </span>
               {activeTab === "sessions" && (
                 <div className="absolute bottom-0 left-0 right-0 h-1 bg-primary rounded-t-full"></div>
@@ -630,6 +772,113 @@ export default function ClassesClientView({
             </button>
           </div>
 
+          {activeTab === "sessions" && (
+            <section className="rounded-2xl border border-surface-container-high bg-surface-container-lowest p-6 shadow-sm">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="font-title-lg text-title-lg font-semibold text-on-surface">
+                    Sessions for {selectedClass?.code || "this class"}
+                  </h2>
+                  <p className="font-body-md text-body-md text-secondary">
+                    Attendance for this course stays with these sessions.
+                  </p>
+                </div>
+                <Link
+                  href={selectedClass ? `/sessions/new?class=${selectedClass.id}` : "/sessions/new"}
+                  className="inline-flex h-11 items-center gap-2 rounded-xl bg-primary-container px-4 font-label-lg text-label-md font-semibold text-on-primary"
+                >
+                  <Plus className="h-4 w-4" />
+                  New session
+                </Link>
+              </div>
+              {classSessions.length === 0 ? (
+                <p className="py-8 text-center font-body-md text-body-md text-secondary">
+                  No sessions for this class yet.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[640px] border-collapse text-left">
+                    <thead>
+                      <tr className="bg-surface-container-low font-label-md text-label-md text-secondary">
+                        <th className="rounded-l-xl px-4 py-3">Session</th>
+                        <th className="px-4 py-3">When</th>
+                        <th className="px-4 py-3">Location</th>
+                        <th className="px-4 py-3">Status</th>
+                        <th className="rounded-r-xl px-4 py-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-surface-container-high">
+                      {classSessions.map((session) => {
+                        const start = new Date(session.starts_at);
+                        const end = new Date(session.ends_at);
+                        const status =
+                          session.status === "closed" || end.getTime() < now
+                            ? "Completed"
+                            : start.getTime() > now
+                              ? "Scheduled"
+                              : "Live";
+                        return (
+                          <tr key={session.id}>
+                            <td className="px-4 py-4 font-title-md text-title-md font-semibold">{session.title}</td>
+                            <td className="px-4 py-4">
+                              <span className="block font-semibold">
+                                {start.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                              </span>
+                              <span className="font-caption text-caption text-secondary">
+                                {start.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+                                {" – "}
+                                {end.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+                              </span>
+                            </td>
+                            <td className="px-4 py-4 text-secondary">{session.venue_name || "Classroom"}</td>
+                            <td className="px-4 py-4">
+                              <span className="inline-flex rounded-full bg-surface-container px-2.5 py-1 font-caption text-caption font-bold text-primary">
+                                {status}
+                              </span>
+                            </td>
+                            <td className="px-4 py-4 text-right">
+                              <div className="inline-flex justify-end gap-2">
+                                <Link href={`/sessions/${session.id}/qr`} className="rounded-lg bg-primary-container px-3 py-1.5 font-label-md text-label-md font-semibold text-on-primary">
+                                  QR pass
+                                </Link>
+                                <Link href={`/sessions/${session.id}/monitor`} className="rounded-lg bg-surface-container px-3 py-1.5 font-label-md text-label-md font-semibold text-primary">
+                                  Monitor
+                                </Link>
+                                <button
+                                  type="button"
+                                  title="Delete session"
+                                  disabled={deletingId === session.id}
+                                  onClick={() => removeSession(session)}
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-secondary hover:bg-error-container/40 hover:text-error disabled:opacity-50"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          )}
+
+          {activeTab === "settings" && selectedClass && (
+            <ClassSettingsForm
+              key={selectedClass.id}
+              classItem={selectedClass}
+              deleting={deletingId === selectedClass.id}
+              onDelete={() => removeClass(selectedClass)}
+              onSaved={(next) =>
+                setClasses((current) => current.map((item) => (item.id === next.id ? next : item)))
+              }
+            />
+          )}
+
+          {activeTab === "roster" && (
+          <>
           {/* Filter & Action Controls */}
           <div className="bg-surface-container-lowest rounded-2xl p-4 shadow-sm border border-surface-container-high flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
             <div className="flex flex-1 items-center gap-3 flex-wrap">
@@ -785,6 +1034,15 @@ export default function ClassesClientView({
                               >
                                 <Pencil className="h-4 w-4" />
                               </button>
+                              <button
+                                type="button"
+                                title={`Remove ${student.full_name}`}
+                                disabled={deletingId === student.id}
+                                onClick={() => removeStudent(student)}
+                                className="w-9 h-9 rounded-lg flex items-center justify-center text-secondary hover:bg-error-container/40 hover:text-error transition-colors cursor-pointer disabled:opacity-50"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -840,362 +1098,26 @@ export default function ClassesClientView({
               </div>
             </div>
           </div>
+          </>
+          )}
+          </>
+          )}
         </main>
       </div>
 
-      {/* ── Modal Wizard: Import Class List & Reference Biometrics ── */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-inverse-surface/60 backdrop-blur-sm transition-opacity">
-          <div className="relative w-full max-w-3xl bg-surface-container-lowest rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden border border-surface-container-high animate-in fade-in zoom-in-95 duration-200">
-            {/* Modal Header */}
-            <div className="px-6 sm:px-8 pt-6 pb-4 flex items-start justify-between border-b border-surface-container-high bg-surface-container-lowest">
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-1.5 rounded-lg bg-primary text-on-primary">
-                    <CloudUpload className="h-5 w-5" />
-                  </div>
-                  <h2 className="font-headline-sm text-headline-sm font-bold text-on-surface">
-                    Import Class List &amp; Reference Biometrics
-                  </h2>
-                </div>
-                <p className="font-body-md text-caption text-secondary">
-                  Upload student registry data and baseline photos for on-device facial verification kiosks.
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setIsModalOpen(false)}
-                className="w-9 h-9 rounded-full flex items-center justify-center text-outline hover:bg-surface-container-high hover:text-on-surface transition-colors cursor-pointer"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            {/* 3-Step Wizard Navigation Indicator */}
-            <div className="px-6 sm:px-8 py-3 bg-surface-container-low border-b border-surface-container-high flex items-center justify-between">
-              {/* Step 1: Completed */}
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-full bg-tertiary-fixed text-on-tertiary-fixed flex items-center justify-center shadow-xs">
-                  <Check className="h-4 w-4 font-bold" />
-                </div>
-                <div className="flex flex-col">
-                  <span className="font-label-md text-label-md text-on-surface font-semibold">
-                    1. Upload CSV
-                  </span>
-                  <span className="font-caption text-caption text-tertiary-container font-medium">
-                    class_roster_sem2.csv
-                  </span>
-                </div>
-              </div>
-
-              <div className="h-[2px] flex-1 mx-3 bg-tertiary-fixed"></div>
-
-              {/* Step 2: Completed */}
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-full bg-tertiary-fixed text-on-tertiary-fixed flex items-center justify-center shadow-xs">
-                  <Check className="h-4 w-4 font-bold" />
-                </div>
-                <div className="flex flex-col">
-                  <span className="font-label-md text-label-md text-on-surface font-semibold">
-                    2. Bulk Photos
-                  </span>
-                  <span className="font-caption text-caption text-tertiary-container font-medium">
-                    51 files indexed
-                  </span>
-                </div>
-              </div>
-
-              <div className="h-[2px] flex-1 mx-3 bg-primary-fixed"></div>
-
-              {/* Step 3: Active */}
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-full bg-primary-container text-on-primary flex items-center justify-center font-bold text-xs shadow-sm ring-4 ring-primary-fixed/50">
-                  3
-                </div>
-                <div className="flex flex-col">
-                  <span className="font-label-md text-label-md text-primary font-bold">
-                    3. Review &amp; Validate
-                  </span>
-                  <span className="font-caption text-caption text-primary font-semibold">
-                    3 Anomalies flagged
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Modal Body */}
-            <div className="px-6 sm:px-8 py-5 overflow-y-auto space-y-4 flex-1">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="p-4 rounded-xl bg-surface-container-low border border-surface-container-high flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-lg bg-tertiary-fixed text-on-tertiary-fixed flex items-center justify-center flex-shrink-0">
-                    <CheckCircle2 className="h-5 w-5" />
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="font-title-lg text-title-lg text-on-surface font-bold leading-tight">
-                      50 Ready
-                    </span>
-                    <span className="font-caption text-caption text-secondary">
-                      Verified &amp; matched
-                    </span>
-                  </div>
-                </div>
-
-                <div className="p-4 rounded-xl bg-surface-container-low border border-surface-container-high flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-lg bg-secondary-fixed text-on-secondary-fixed-variant flex items-center justify-center flex-shrink-0">
-                    <ImageOff className="h-5 w-5" />
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="font-title-lg text-title-lg text-on-surface font-bold leading-tight">
-                      2 Missing
-                    </span>
-                    <span className="font-caption text-caption text-secondary">
-                      Photo not found
-                    </span>
-                  </div>
-                </div>
-
-                <div className="p-4 rounded-xl bg-surface-container-low border border-surface-container-high flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-lg bg-error-container text-on-error-container flex items-center justify-center flex-shrink-0">
-                    <AlertTriangle className="h-5 w-5" />
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="font-title-lg text-title-lg text-on-surface font-bold leading-tight">
-                      1 Conflict
-                    </span>
-                    <span className="font-caption text-caption text-secondary">
-                      Duplicate index ID
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-4 rounded-xl bg-surface-container border border-surface-container-high flex items-start gap-3">
-                <Info className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
-                <p className="font-body-md text-caption text-on-surface leading-relaxed">
-                  Review anomalies below before finalizing import into {selectedClass?.code || "the course"}. Students with missing photos will require manual check-in or rapid on-site camera enrollment during the first lecture. Duplicate IDs cannot be imported automatically.
-                </p>
-              </div>
-
-              <div className="p-3 bg-surface-container-low rounded-xl flex items-center justify-between text-secondary font-caption text-caption border border-surface-container-high">
-                <div className="flex items-center gap-2">
-                  <Paperclip className="h-4 w-4" />
-                  <span>
-                    Files matched against rule: <code className="px-1.5 py-0.5 rounded bg-surface-container-lowest text-primary font-mono font-medium">[index_number].jpg</code>
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  className="text-primary hover:underline font-medium flex items-center gap-1 cursor-pointer"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  <span>Download CSV template</span>
-                </button>
-              </div>
-
-              {/* Preview table */}
-              <div className="rounded-xl overflow-hidden border border-surface-container-high bg-surface-container-lowest">
-                <div className="px-4 py-2.5 bg-surface-container-high flex items-center justify-between">
-                  <span className="font-label-md text-label-md text-on-surface font-semibold">
-                    Parsed Records Preview (Sample of 4)
-                  </span>
-                  <span className="font-caption text-caption text-secondary font-mono">
-                    Total: 53 entries processed
-                  </span>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse font-caption text-caption">
-                    <thead>
-                      <tr className="bg-surface-container-low text-secondary font-semibold">
-                        <th className="py-2.5 px-4">Student &amp; Index</th>
-                        <th className="py-2.5 px-3">Programme</th>
-                        <th className="py-2.5 px-3">Biometric Asset</th>
-                        <th className="py-2.5 px-3">Validation Status</th>
-                        <th className="py-2.5 px-4 text-right">Resolution</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-surface-container-high text-on-surface">
-                      <tr className="hover:bg-surface-container-low/40">
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-2">
-                            <div className="w-7 h-7 rounded-full bg-primary-fixed text-primary flex items-center justify-center font-bold text-xs">
-                              SM
-                            </div>
-                            <div className="flex flex-col">
-                              <span className="font-semibold text-on-surface">Sarah Mensah</span>
-                              <span className="font-mono text-secondary">20234102</span>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="py-3 px-3 text-secondary">BSc CS (L200)</td>
-                        <td className="py-3 px-3">
-                          <span className="font-mono text-tertiary-container flex items-center gap-1 font-medium">
-                            <ImageIcon className="h-3.5 w-3.5" />
-                            20234102.jpg
-                          </span>
-                        </td>
-                        <td className="py-3 px-3">
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-tertiary-fixed text-on-tertiary-fixed font-semibold">
-                            <Check className="h-3 w-3" />
-                            Valid
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-right text-secondary">Auto-linked</td>
-                      </tr>
-
-                      <tr className="bg-secondary-fixed/30 hover:bg-secondary-fixed/40 transition-colors">
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-2">
-                            <div className="w-7 h-7 rounded-full bg-secondary-container text-on-secondary-container flex items-center justify-center font-bold text-xs">
-                              KB
-                            </div>
-                            <div className="flex flex-col">
-                              <span className="font-semibold text-on-surface">Kofi Boateng</span>
-                              <span className="font-mono text-secondary">20231894</span>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="py-3 px-3 text-secondary">BSc CS (L200)</td>
-                        <td className="py-3 px-3">
-                          <span className="text-secondary italic flex items-center gap-1">
-                            <ImageOff className="h-3.5 w-3.5" />
-                            None provided
-                          </span>
-                        </td>
-                        <td className="py-3 px-3">
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-secondary-fixed text-on-secondary-fixed-variant font-semibold">
-                            <AlertTriangle className="h-3 w-3" />
-                            Missing photo
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <button
-                            type="button"
-                            className="text-primary hover:underline font-semibold flex items-center gap-0.5 ml-auto cursor-pointer"
-                          >
-                            <CloudUpload className="h-3.5 w-3.5" />
-                            <span>Attach</span>
-                          </button>
-                        </td>
-                      </tr>
-
-                      <tr className="bg-error-container/25 hover:bg-error-container/35 transition-colors">
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-2">
-                            <div className="w-7 h-7 rounded-full bg-error-container text-on-error-container flex items-center justify-center font-bold text-xs">
-                              DO
-                            </div>
-                            <div className="flex flex-col">
-                              <span className="font-semibold text-on-surface">Daniel Osei</span>
-                              <span className="font-mono text-error font-bold">20231045</span>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="py-3 px-3 text-secondary">BSc IT (L200)</td>
-                        <td className="py-3 px-3">
-                          <span className="font-mono text-secondary flex items-center gap-1">
-                            <ImageIcon className="h-3.5 w-3.5" />
-                            20231045.jpg
-                          </span>
-                        </td>
-                        <td className="py-3 px-3">
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-error-container text-on-error-container font-semibold">
-                            <X className="h-3 w-3" />
-                            Duplicate index
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <span className="text-error font-medium">Skip row</span>
-                        </td>
-                      </tr>
-
-                      <tr className="hover:bg-surface-container-low/40">
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-2">
-                            <div className="w-7 h-7 rounded-full bg-primary-fixed text-primary flex items-center justify-center font-bold text-xs">
-                              AA
-                            </div>
-                            <div className="flex flex-col">
-                              <span className="font-semibold text-on-surface">Ama Asante</span>
-                              <span className="font-mono text-secondary">20239021</span>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="py-3 px-3 text-secondary">BSc CS (L200)</td>
-                        <td className="py-3 px-3">
-                          <span className="font-mono text-tertiary-container flex items-center gap-1 font-medium">
-                            <ImageIcon className="h-3.5 w-3.5" />
-                            20239021.jpg
-                          </span>
-                        </td>
-                        <td className="py-3 px-3">
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-tertiary-fixed text-on-tertiary-fixed font-semibold">
-                            <Check className="h-3 w-3" />
-                            Valid
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-right text-secondary">Auto-linked</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-
-            {/* Modal Footer Action Bar */}
-            <div className="px-6 sm:px-8 py-4 bg-surface-container-low border-t border-surface-container-high flex flex-col sm:flex-row items-center justify-between gap-3">
-              <div className="flex items-center gap-3 w-full sm:w-auto">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="h-11 px-4 rounded-xl bg-surface-container-lowest text-secondary hover:bg-surface-container hover:text-on-surface transition-colors font-label-md text-label-md flex items-center gap-1.5 shadow-xs border border-surface-container-high cursor-pointer"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                  <span>Back to Step 2</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="text-secondary hover:text-on-surface font-label-md text-label-md underline-offset-4 hover:underline cursor-pointer"
-                >
-                  Cancel
-                </button>
-              </div>
-
-              <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
-                <span className="font-caption text-caption text-secondary hidden md:inline">
-                  2 flagged records held for review
-                </span>
-                <button
-                  type="button"
-                  onClick={handleFinalizeImport}
-                  disabled={importingState !== "idle" || !selectedClass}
-                  className="w-full sm:w-auto h-11 px-5 rounded-xl bg-primary-container text-on-primary hover:opacity-95 shadow-md flex items-center justify-center gap-2 font-label-lg text-label-md font-semibold active:scale-95 transition-all cursor-pointer disabled:opacity-50"
-                >
-                  {importingState === "idle" && (
-                    <>
-                      <span>Import verified students</span>
-                      <ArrowRight className="h-4 w-4" />
-                    </>
-                  )}
-                  {importingState === "importing" && (
-                    <>
-                      <Sparkles className="h-4 w-4 animate-spin" />
-                      <span>Saving to Supabase...</span>
-                    </>
-                  )}
-                  {importingState === "done" && (
-                    <>
-                      <Check className="h-4 w-4" />
-                      <span>Completed!</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+      {isModalOpen && selectedClass && (
+        <ClassImportDialog
+          classId={selectedClass.id}
+          classCode={selectedClass.code}
+          onClose={() => setIsModalOpen(false)}
+          onImported={async () => {
+            const { students: updated } = await getClassStudentsAction(selectedClass.id);
+            if (updated) setStudents(updated);
+            setStatusMessage("Imported the roster for " + selectedClass.code + ".");
+          }}
+        />
       )}
+
     </div>
   );
 }

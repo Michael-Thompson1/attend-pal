@@ -1,8 +1,9 @@
-import { createClient } from "@/lib/supabase/server";
+import { ProfilePhoto } from "@/components/lecturer/profile-photo";
+import { AttendMark } from "@/components/brand/attend-mark";
+import { getLecturer, getLecturerRecord } from "@/lib/lecturer/session";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import {
-  GraduationCap,
   LayoutGrid,
   BookOpen,
   Clock,
@@ -10,7 +11,6 @@ import {
   BarChart3,
   Settings,
   MapPin,
-  User,
   Download,
   Plus,
   Calendar,
@@ -69,28 +69,29 @@ export default async function DashboardPage({
   searchParams: Promise<{ filter?: string }>;
 }) {
   const { filter } = await searchParams;
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { supabase, user } = await getLecturer();
 
   if (!user) {
     redirect("/login");
   }
 
-  // 1. Fetch lecturer profile
-  const { data: profileData } = await supabase
-    .from("lecturers")
-    .select("full_name, institution, campus")
-    .eq("id", user.id)
-    .single();
-
-  const profile = profileData as {
-    full_name?: string;
-    institution?: string;
-    campus?: string;
-  } | null;
+  const [{ profile }, { count: classesCount }, { data: rawSessions }, { data: rawAlerts }] =
+    await Promise.all([
+      getLecturerRecord(),
+      supabase.from("classes").select("id", { count: "exact", head: true }).eq("lecturer_id", user.id),
+      supabase
+        .from("sessions")
+        .select("id, class_id, lecturer_id, title, token, starts_at, ends_at, venue_name, radius_m, status, classes(code, title, programme)")
+        .eq("lecturer_id", user.id)
+        .order("starts_at", { ascending: false })
+        .limit(10),
+      supabase
+        .from("alerts")
+        .select("id, session_id, type, severity, claimed_index, details, status, created_at, sessions!inner(lecturer_id)")
+        .eq("sessions.lecturer_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(10),
+    ]);
 
   const fullName =
     profile?.full_name ||
@@ -103,30 +104,7 @@ export default async function DashboardPage({
   const campusName =
     profile?.campus || "UCC Main Campus • North Wing";
 
-  // 2. Fetch classes count
-  const { count: classesCount } = await supabase
-    .from("classes")
-    .select("id", { count: "exact", head: true })
-    .eq("lecturer_id", user.id);
-
-  // 3. Fetch lecturer's sessions
-  const { data: rawSessions } = await supabase
-    .from("sessions")
-    .select("id, class_id, lecturer_id, title, token, starts_at, ends_at, venue_name, radius_m, status, classes(code, title, programme)")
-    .eq("lecturer_id", user.id)
-    .order("starts_at", { ascending: false })
-    .limit(10);
-
   const sessions = (rawSessions as unknown as SessionRow[]) || [];
-
-  // 4. Fetch open alerts for this lecturer's sessions
-  const { data: rawAlerts } = await supabase
-    .from("alerts")
-    .select("id, session_id, type, severity, claimed_index, details, status, created_at, sessions!inner(lecturer_id)")
-    .eq("sessions.lecturer_id", user.id)
-    .order("created_at", { ascending: false })
-    .limit(10);
-
   const alerts = (rawAlerts as unknown as AlertRow[]) || [];
   const openAlertsCount = alerts.filter((a) => a.status === "new").length;
 
@@ -158,24 +136,21 @@ export default async function DashboardPage({
   const sessionIds = sessions.map((session) => session.id);
   const classIds = [...new Set(sessions.map((session) => session.class_id))];
 
-  if (sessionIds.length > 0) {
-    const { data: present } = await supabase
-      .from("attendance")
-      .select("session_id")
-      .in("session_id", sessionIds)
-      .eq("status", "verified");
-    for (const row of present ?? []) {
-      const id = row.session_id as string;
-      verifiedBySession.set(id, (verifiedBySession.get(id) ?? 0) + 1);
-    }
+  const [presentResult, rosterResult] = await Promise.all([
+    sessionIds.length > 0
+      ? supabase.from("attendance").select("session_id").in("session_id", sessionIds).eq("status", "verified")
+      : Promise.resolve({ data: [] as { session_id: string }[] }),
+    classIds.length > 0
+      ? supabase.from("students").select("class_id").in("class_id", classIds)
+      : Promise.resolve({ data: [] as { class_id: string }[] }),
+  ]);
+  for (const row of presentResult.data ?? []) {
+    const id = row.session_id as string;
+    verifiedBySession.set(id, (verifiedBySession.get(id) ?? 0) + 1);
   }
-
-  if (classIds.length > 0) {
-    const { data: roster } = await supabase.from("students").select("class_id").in("class_id", classIds);
-    for (const row of roster ?? []) {
-      const id = row.class_id as string;
-      enrolledByClass.set(id, (enrolledByClass.get(id) ?? 0) + 1);
-    }
+  for (const row of rosterResult.data ?? []) {
+    const id = row.class_id as string;
+    enrolledByClass.set(id, (enrolledByClass.get(id) ?? 0) + 1);
   }
 
   const verifiedTotal = [...verifiedBySession.values()].reduce((sum, count) => sum + count, 0);
@@ -223,9 +198,7 @@ export default async function DashboardPage({
         <div className="flex flex-col">
           {/* Logo & Portal Label */}
           <div className="h-16 px-6 flex items-center gap-3 border-b border-surface-container-high">
-            <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-on-primary shadow-sm">
-              <GraduationCap className="h-5 w-5" />
-            </div>
+            <AttendMark />
             <div className="flex flex-col">
               <span className="font-title-lg text-title-lg font-bold text-primary tracking-tight">
                 Attend Pal
@@ -326,9 +299,7 @@ export default async function DashboardPage({
           {/* User Profile & Sign Out */}
           <div className="flex items-center justify-between gap-2 pt-1">
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-8 h-8 rounded-full bg-primary-container text-on-primary flex items-center justify-center font-bold text-caption flex-shrink-0">
-                {firstName.charAt(0)}
-              </div>
+              <ProfilePhoto variant="initial" initial={firstName.charAt(0)} />
               <div className="flex flex-col min-w-0">
                 <span className="font-label-md text-label-md font-semibold text-on-surface truncate">
                   {fullName}
@@ -378,9 +349,7 @@ export default async function DashboardPage({
 
             {/* User Chip */}
             <div className="hidden sm:flex items-center gap-2.5 p-1.5 pl-2 pr-3.5 rounded-full bg-surface-container-low hover:bg-surface-container transition-colors">
-              <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-on-primary shadow-sm flex-shrink-0">
-                <User className="h-4 w-4" />
-              </div>
+              <ProfilePhoto variant="icon" />
               <div className="flex flex-col text-left">
                 <span className="font-label-md text-label-md text-on-surface font-semibold leading-tight">
                   {fullName}

@@ -1,6 +1,7 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
+import { getLecturer } from "@/lib/lecturer/session";
+
 import { revalidatePath } from "next/cache";
 
 export type SettingsActionResult = {
@@ -19,10 +20,7 @@ const PHOTO_TYPES: Record<string, string> = {
 const MAX_PHOTO_BYTES = 4 * 1024 * 1024;
 
 async function requireUser() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { supabase, user } = await getLecturer();
   return { supabase, user };
 }
 

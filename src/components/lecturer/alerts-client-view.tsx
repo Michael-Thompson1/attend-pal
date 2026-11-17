@@ -1,5 +1,9 @@
 "use client";
 
+import { ProfilePhoto } from "@/components/lecturer/profile-photo";
+
+import { AttendMark } from "@/components/brand/attend-mark";
+
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import {
@@ -10,7 +14,6 @@ import {
   BarChart2,
   Settings,
   Bell,
-  User,
   Building2,
   Download,
   RefreshCw,
@@ -279,9 +282,7 @@ export default function AlertsClientView({
       <aside className="fixed left-0 top-0 h-full w-64 bg-surface-container-lowest shadow-[0_1px_8px_rgba(0,0,0,0.04)] z-50 flex flex-col justify-between">
         <div className="flex flex-col flex-1">
           <div className="h-16 px-space-lg flex items-center gap-space-sm">
-            <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center text-on-primary shadow-sm">
-              <CheckCircle2 className="w-5 h-5" />
-            </div>
+            <AttendMark className="h-9 w-9 rounded-xl" />
             <div>
               <span className="font-title-lg text-title-lg text-primary tracking-tight block leading-none">
                 Attend Pal
@@ -353,9 +354,7 @@ export default function AlertsClientView({
             </Link>
             <div className="h-8 w-px bg-surface-container-high" />
             <div className="flex items-center gap-space-sm pl-space-xs">
-              <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
-                <User className="text-on-primary w-4 h-4" />
-              </div>
+              <ProfilePhoto variant="icon" />
               <div className="flex flex-col text-left">
                 <span className="font-label-md text-label-md text-on-surface font-semibold leading-tight">
                   Dr. Kwame Mensah

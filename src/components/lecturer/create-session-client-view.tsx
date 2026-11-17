@@ -1,10 +1,13 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { ProfilePhoto } from "@/components/lecturer/profile-photo";
+
+import { AttendMark } from "@/components/brand/attend-mark";
+
+import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import HeaderSearch from "@/components/lecturer/header-search";
 import {
-  GraduationCap,
   LayoutGrid,
   BookOpen,
   Clock,
@@ -13,7 +16,6 @@ import {
   Settings,
   MapPin,
   Search,
-  User,
   Sliders,
   Terminal,
   ChevronDown,
@@ -56,6 +58,8 @@ interface SessionDefaults {
 interface CreateSessionClientProps {
   classes: ClassRow[];
   defaults: SessionDefaults;
+  initialClassId?: string;
+  openAlertCount?: number;
 }
 
 function addMinutes(start: string, minutes: number) {
@@ -69,9 +73,11 @@ function addMinutes(start: string, minutes: number) {
 export default function CreateSessionClientView({
   classes,
   defaults,
+  initialClassId,
+  openAlertCount = 0,
 }: CreateSessionClientProps) {
   const [selectedClassId, setSelectedClassId] = useState<string>(
-    classes[0]?.id ?? ""
+    classes.some((course) => course.id === initialClassId) ? initialClassId || "" : classes[0]?.id ?? ""
   );
   const [showClassDropdown, setShowClassDropdown] = useState(false);
   const [radiusM, setRadiusM] = useState<number>(defaults.radiusM);
@@ -80,8 +86,8 @@ export default function CreateSessionClientView({
   const [allowSecondCheckin, setAllowSecondCheckin] = useState(defaults.allowSecondCheckin);
   const [notifySuspicious, setNotifySuspicious] = useState(defaults.notifySuspicious);
   const [selectedVenue, setSelectedVenue] = useState("Lecture Hall B");
-  const [center, setCenter] = useState({ lat: 5.1155, lng: -1.2909 });
-  const [gpsMessage, setGpsMessage] = useState<string | null>(null);
+  const [center, setCenter] = useState<{ lat: number; lng: number } | null>(null);
+  const [gpsMessage, setGpsMessage] = useState("Reading this device for the class center.");
   const [sessionDate, setSessionDate] = useState(() => {
     const d = new Date();
     return d.toISOString().split("T")[0];
@@ -90,6 +96,33 @@ export default function CreateSessionClientView({
   const [endTime, setEndTime] = useState(addMinutes("10:00", defaults.windowMinutes));
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  function readDeviceCenter() {
+    if (!navigator.geolocation) {
+      setGpsMessage("This browser cannot read a location.");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setCenter({ lat: position.coords.latitude, lng: position.coords.longitude });
+        setGpsMessage("Class center is this device.");
+      },
+      () => setGpsMessage("Allow location, then press Current GPS. The class center is this device."),
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  }
+
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setCenter({ lat: position.coords.latitude, lng: position.coords.longitude });
+        setGpsMessage("Class center is this device.");
+      },
+      () => setGpsMessage("Allow location, then press Current GPS. The class center is this device."),
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  }, []);
 
   // Dynamic visual radius scaling for the SVG map (scale 100m -> r=105)
   const mapSvgRadius = Math.max(30, Math.min(220, (radiusM / 100) * 105));
@@ -115,6 +148,11 @@ export default function CreateSessionClientView({
     }
     if (!sessionTitle.trim()) {
       setError("Please enter a session title.");
+      return;
+    }
+    if (!center) {
+      setError("Allow location so this device can be the class center.");
+      readDeviceCenter();
       return;
     }
     setError(null);
@@ -151,9 +189,7 @@ export default function CreateSessionClientView({
         <div className="flex flex-col">
           {/* Logo & Portal Label */}
           <div className="h-16 px-6 flex items-center gap-3 border-b border-surface-container-high">
-            <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-on-primary shadow-sm">
-              <GraduationCap className="h-5 w-5" />
-            </div>
+            <AttendMark />
             <div className="flex flex-col">
               <span className="font-title-lg text-title-lg font-bold text-primary tracking-tight">
                 Attend Pal
@@ -200,9 +236,11 @@ export default function CreateSessionClientView({
                   <Bell className="h-5 w-5" />
                   <span>Alerts</span>
                 </div>
-                <span className="px-2 py-0.5 rounded-full bg-error-container text-on-error-container font-caption text-caption font-bold">
-                  3
-                </span>
+                {openAlertCount > 0 && (
+                  <span className="px-2 py-0.5 rounded-full bg-error-container text-on-error-container font-caption text-caption font-bold">
+                    {openAlertCount}
+                  </span>
+                )}
               </Link>
 
               <Link
@@ -245,9 +283,7 @@ export default function CreateSessionClientView({
 
           <div className="flex items-center justify-between gap-2 pt-1">
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-8 h-8 rounded-full bg-primary-container text-on-primary flex items-center justify-center font-bold text-caption flex-shrink-0">
-                M
-              </div>
+              <ProfilePhoto variant="initial" />
               <div className="flex flex-col min-w-0">
                 <span className="font-label-md text-label-md font-semibold text-on-surface truncate">
                   Michael Dev Test
@@ -286,15 +322,15 @@ export default function CreateSessionClientView({
               >
                 <Bell className="h-5 w-5" />
               </Link>
-              <span className="absolute top-2 right-2 w-2.5 h-2.5 rounded-full bg-error ring-2 ring-surface-container-lowest"></span>
+              {openAlertCount > 0 && (
+                <span className="absolute top-2 right-2 w-2.5 h-2.5 rounded-full bg-error ring-2 ring-surface-container-lowest"></span>
+              )}
             </div>
 
             <div className="h-8 w-[1px] bg-surface-container-high hidden sm:block"></div>
 
             <div className="hidden sm:flex items-center gap-2.5 p-1.5 pl-2 pr-3.5 rounded-full bg-surface-container-low hover:bg-surface-container transition-colors">
-              <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-on-primary shadow-sm flex-shrink-0">
-                <User className="h-4 w-4" />
-              </div>
+              <ProfilePhoto variant="icon" />
               <div className="flex flex-col text-left">
                 <span className="font-label-md text-label-md text-on-surface font-semibold leading-tight">
                   Michael Dev Test
@@ -670,18 +706,8 @@ export default function CreateSessionClientView({
                       <button
                         type="button"
                         onClick={() => {
-                          if (!navigator.geolocation) {
-                            setGpsMessage("This browser cannot read a location.");
-                            return;
-                          }
-                          navigator.geolocation.getCurrentPosition(
-                            (position) => {
-                              setCenter({ lat: position.coords.latitude, lng: position.coords.longitude });
-                              setGpsMessage("Classroom pin set from this device.");
-                            },
-                            () => setGpsMessage("Location permission was blocked. The campus pin stays in place."),
-                            { enableHighAccuracy: true, timeout: 10000 },
-                          );
+                          setGpsMessage("Reading this device for the class center.");
+                          readDeviceCenter();
                         }}
                         className="h-11 px-3.5 rounded-xl bg-surface-container-low hover:bg-surface-container text-on-surface font-label-md text-label-md font-semibold flex items-center gap-1.5 transition-all shadow-xs border border-surface-container-high cursor-pointer"
                         title="Use current device GPS"
@@ -731,7 +757,7 @@ export default function CreateSessionClientView({
                   <div className="flex flex-col font-caption text-caption">
                     <span className="font-semibold text-on-surface">Precision location tip</span>
                     <span>
-                      Laptop location can be inaccurate inside deep campus structures. Use Current GPS while you are standing in the classroom.
+                      The class center is this device. Stand in the classroom and allow location before you create the session. Laptop GPS can be rough indoors, so press Current GPS again if the first reading looks wrong.
                     </span>
                     {gpsMessage && <span className="font-semibold text-on-surface">{gpsMessage}</span>}
                   </div>
@@ -970,7 +996,7 @@ export default function CreateSessionClientView({
               <button
                 type="button"
                 onClick={handleSubmit}
-                disabled={isPending || classes.length === 0}
+                disabled={isPending || classes.length === 0 || !center}
                 className="h-11 px-6 rounded-xl bg-primary-container hover:bg-primary text-on-primary font-label-lg text-label-md font-semibold shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {isPending ? (

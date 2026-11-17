@@ -1,5 +1,7 @@
 "use client";
 
+import { AttendMark } from "@/components/brand/attend-mark";
+
 import { useState, type ReactNode } from "react";
 import {
   AlertCircle,
@@ -17,7 +19,6 @@ import {
   Receipt,
   RefreshCw,
   Satellite,
-  ShieldCheck,
   Smartphone,
   Sun,
   Terminal,
@@ -33,9 +34,7 @@ function KioskBar() {
   return (
     <header className="-mx-4 flex h-16 items-center justify-between px-4 shadow-[0_1px_8px_rgba(0,0,0,0.03)]">
       <div className="flex items-center gap-2">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-on-primary shadow-sm">
-          <ShieldCheck className="h-5 w-5" />
-        </div>
+        <AttendMark className="h-9 w-9 rounded-xl" />
         <div>
           <p className="font-title-md text-title-md leading-none tracking-tight">Attend Pal</p>
           <p className="mt-0.5 font-caption text-caption leading-tight text-secondary">Campus Verification Kiosk</p>
@@ -645,36 +644,44 @@ export function IdentityCheckFailed({
         <button
           type="button"
           onClick={() => setManualOpen(true)}
-          className="inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl py-2 font-label-md text-label-md font-semibold text-primary"
+          className="inline-flex min-h-11 w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl py-2 font-label-md text-label-md font-semibold text-primary"
         >
           Ask lecturer for manual verification
         </button>
       </div>
 
       {manualOpen && (
-        <div className="mt-3 flex w-full flex-col rounded-xl bg-surface-container-low p-4 shadow-sm">
-          <div className="mb-1.5 flex items-center justify-between">
-            <p className="font-title-md text-title-md">Faculty Passcode Ready</p>
-            <button
-              type="button"
-              onClick={() => setManualOpen(false)}
-              className="flex h-8 w-8 items-center justify-center rounded-full text-secondary"
-            >
-              <X className="h-[18px] w-[18px]" />
-            </button>
-          </div>
-          <p className="mb-3 font-caption text-caption text-secondary">
-            Present this terminal to {lecturer} or your Teaching Assistant to enter their 4-digit faculty pin.
-          </p>
-          <div className="flex justify-center gap-2">
-            {["a", "b", "c", "d"].map((dot) => (
-              <div
-                key={dot}
-                className="flex h-12 w-11 items-center justify-center rounded-xl bg-surface-container-lowest font-title-lg text-title-lg shadow-sm"
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-inverse-surface/40 p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="faculty-passcode-title"
+            className="flex w-full max-w-[420px] flex-col rounded-xl bg-surface-container-low p-4 shadow-sm"
+          >
+            <div className="mb-1.5 flex items-center justify-between">
+              <p id="faculty-passcode-title" className="font-title-md text-title-md">Faculty Passcode Ready</p>
+              <button
+                type="button"
+                aria-label="Close"
+                onClick={() => setManualOpen(false)}
+                className="flex h-11 w-11 items-center justify-center rounded-full text-secondary"
               >
-                •
-              </div>
-            ))}
+                <X className="h-[18px] w-[18px]" />
+              </button>
+            </div>
+            <p className="mb-3 font-caption text-caption text-secondary">
+              Present this terminal to {lecturer} or your Teaching Assistant to enter their 4-digit faculty pin.
+            </p>
+            <div className="flex justify-center gap-2">
+              {["a", "b", "c", "d"].map((dot) => (
+                <div
+                  key={dot}
+                  className="flex h-12 w-11 items-center justify-center rounded-xl bg-surface-container-lowest font-title-lg text-title-lg shadow-sm"
+                >
+                  •
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}

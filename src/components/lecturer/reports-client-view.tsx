@@ -1,5 +1,9 @@
 "use client";
 
+import { ProfilePhoto } from "@/components/lecturer/profile-photo";
+
+import { AttendMark } from "@/components/brand/attend-mark";
+
 import { useState, useMemo, useTransition } from "react";
 import Link from "next/link";
 import {
@@ -12,7 +16,6 @@ import {
   Building2,
   Search,
   Bell,
-  User,
   FileSpreadsheet,
   FileText,
   Printer,
@@ -59,6 +62,7 @@ export interface StudentReportItem {
 interface ReportsClientViewProps {
   classes?: ClassOption[];
   initialReportData?: ClassReportData | null;
+  openAlertCount?: number;
 }
 
 // ─── Initial Demo Data ──────────────────────────────────────────────────────
@@ -66,6 +70,7 @@ interface ReportsClientViewProps {
 export default function ReportsClientView({
   classes: initialClasses = [],
   initialReportData = null,
+  openAlertCount = 0,
 }: ReportsClientViewProps) {
   const isDemo = false;
   const availableClasses = initialClasses;
@@ -207,7 +212,7 @@ export default function ReportsClientView({
     { label: "Dashboard", icon: LayoutDashboard, path: "/dashboard" },
     { label: "Classes", icon: School, path: "/classes" },
     { label: "Sessions", icon: CalendarClock, path: "/sessions/new" },
-    { label: "Alerts", icon: BellRing, path: "/alerts", badge: 3 },
+    { label: "Alerts", icon: BellRing, path: "/alerts", badge: openAlertCount > 0 ? openAlertCount : undefined },
     { label: "Reports", icon: BarChart2, path: "/reports", active: true },
     { label: "Settings", icon: Settings, path: "/settings" },
   ];
@@ -219,9 +224,7 @@ export default function ReportsClientView({
         <div className="flex flex-col flex-1">
           {/* Logo */}
           <div className="h-16 px-space-lg flex items-center gap-space-sm">
-            <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center text-on-primary shadow-sm">
-              <CheckCircle2 className="w-5 h-5" />
-            </div>
+            <AttendMark className="h-9 w-9 rounded-xl" />
             <div>
               <span className="font-title-lg text-title-lg text-primary tracking-tight block leading-none">
                 Attend Pal
@@ -289,13 +292,13 @@ export default function ReportsClientView({
               className="relative w-10 h-10 rounded-xl flex items-center justify-center text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-all"
             >
               <Bell className="w-5 h-5" />
-              <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-error ring-2 ring-surface-container-lowest" />
+              {openAlertCount > 0 && (
+                <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-error ring-2 ring-surface-container-lowest" />
+              )}
             </Link>
             <div className="h-8 w-px bg-surface-container-high" />
             <div className="flex items-center gap-space-sm pl-space-xs">
-              <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
-                <User className="text-on-primary w-4 h-4" />
-              </div>
+              <ProfilePhoto variant="icon" />
               <div className="flex flex-col text-left">
                 <span className="font-label-md text-label-md text-on-surface font-semibold leading-tight">
                   Dr. Kwame Mensah

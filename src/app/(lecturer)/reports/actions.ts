@@ -1,6 +1,6 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
+import { getLecturer } from "@/lib/lecturer/session";
 
 export interface ClassReportData {
   classId: string;
@@ -40,10 +40,7 @@ export interface ClassOption {
 
 /** Get all classes taught by lecturer for report selection */
 export async function getLecturerClassesForReportsAction(): Promise<ClassOption[]> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { supabase, user } = await getLecturer();
 
   if (!user) return [];
 
@@ -60,10 +57,7 @@ export async function getLecturerClassesForReportsAction(): Promise<ClassOption[
 export async function getClassReportDataAction(
   classId: string
 ): Promise<ClassReportData | null> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { supabase, user } = await getLecturer();
 
   if (!user) return null;
 
@@ -76,22 +70,21 @@ export async function getClassReportDataAction(
 
   if (!cls) return null;
 
-  // 2. Fetch all sessions for this class
-  const { data: sessions } = await supabase
-    .from("sessions")
-    .select("id, title, starts_at, status")
-    .eq("class_id", classId)
-    .order("starts_at", { ascending: true });
+  const [{ data: sessions }, { data: students }] = await Promise.all([
+    supabase
+      .from("sessions")
+      .select("id, title, starts_at, status")
+      .eq("class_id", classId)
+      .order("starts_at", { ascending: true }),
+    supabase
+      .from("students")
+      .select("id, full_name, index_number")
+      .eq("class_id", classId)
+      .order("full_name", { ascending: true }),
+  ]);
 
   const sessionList = sessions ?? [];
   const totalSessionsHeld = sessionList.length;
-
-  // 3. Fetch all enrolled students
-  const { data: students } = await supabase
-    .from("students")
-    .select("id, full_name, index_number")
-    .eq("class_id", classId)
-    .order("full_name", { ascending: true });
 
   const studentList = students ?? [];
   const enrolledCount = studentList.length;

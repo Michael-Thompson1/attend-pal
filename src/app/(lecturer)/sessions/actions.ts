@@ -1,15 +1,12 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
+import { getLecturer } from "@/lib/lecturer/session";
+
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
 export async function createSessionAction(formData: FormData) {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { supabase, user } = await getLecturer();
 
   if (!user) redirect("/login");
 
@@ -23,16 +20,14 @@ export async function createSessionAction(formData: FormData) {
   const allowSecondCheckin = formData.get("allow_second_checkin") === "true";
   const notifySuspicious = formData.get("notify_suspicious") === "true";
 
-  // UCC main campus coordinates (default)
-  const centerLat = parseFloat(
-    (formData.get("center_lat") as string) || "5.1155"
-  );
-  const centerLng = parseFloat(
-    (formData.get("center_lng") as string) || "-1.2909"
-  );
+  const centerLat = parseFloat(String(formData.get("center_lat") ?? ""));
+  const centerLng = parseFloat(String(formData.get("center_lng") ?? ""));
 
   if (!classId || !title || !startsAt || !endsAt) {
     return { error: "Please fill in all required fields." };
+  }
+  if (!Number.isFinite(centerLat) || !Number.isFinite(centerLng)) {
+    return { error: "Allow location so this device can be the class center." };
   }
 
   const { data, error } = await supabase
@@ -64,11 +59,7 @@ export async function createSessionAction(formData: FormData) {
 }
 
 export async function getLecturerClassesAction() {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { supabase, user } = await getLecturer();
 
   if (!user) return [];
 
@@ -84,11 +75,7 @@ export async function getLecturerClassesAction() {
 }
 
 export async function getSessionDetailsAction(sessionId: string) {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { supabase, user } = await getLecturer();
 
   if (!user) return null;
 
@@ -130,11 +117,7 @@ export async function getSessionDetailsAction(sessionId: string) {
 }
 
 export async function closeSessionAction(sessionId: string) {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { supabase, user } = await getLecturer();
 
   if (!user) return { error: "Unauthorized" };
 
@@ -157,11 +140,7 @@ export async function closeSessionAction(sessionId: string) {
 }
 
 export async function regenerateTokenAction(sessionId: string) {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { supabase, user } = await getLecturer();
 
   if (!user) return { error: "Unauthorized" };
 
@@ -182,11 +161,7 @@ export async function regenerateTokenAction(sessionId: string) {
 }
 
 export async function getSessionAttendanceAction(sessionId: string) {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { supabase, user } = await getLecturer();
 
   if (!user) return [];
 
@@ -226,11 +201,7 @@ export async function getSessionAttendanceAction(sessionId: string) {
 }
 
 export async function getSessionAlertsAction(sessionId: string) {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { supabase, user } = await getLecturer();
 
   if (!user) return [];
 
@@ -246,11 +217,7 @@ export async function getSessionAlertsAction(sessionId: string) {
 }
 
 export async function manualAttendanceOverrideAction(formData: FormData) {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { supabase, user } = await getLecturer();
 
   if (!user) return { error: "Unauthorized" };
 
@@ -289,11 +256,7 @@ export async function extendSessionWindowAction(
   sessionId: string,
   additionalMinutes: number = 5
 ) {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { supabase, user } = await getLecturer();
 
   if (!user) return { error: "Unauthorized" };
 
@@ -322,11 +285,7 @@ export async function extendSessionWindowAction(
 }
 
 export async function dismissAlertAction(alertId: string, sessionId: string) {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { supabase, user } = await getLecturer();
 
   if (!user) return { error: "Unauthorized" };
 

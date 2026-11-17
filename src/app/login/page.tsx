@@ -13,7 +13,7 @@ import {
   LogIn,
   UserPlus,
   Landmark,
-  BadgeCheck,
+  GraduationCap,
   AlertCircle,
   Loader2,
 } from "lucide-react";
@@ -74,7 +74,7 @@ export default function LoginPage() {
             {/* Section Headings */}
             <div className="mb-7">
               <div className="mb-2 inline-flex items-center space-x-2 text-primary">
-                <BadgeCheck className="h-5 w-5" />
+                <GraduationCap className="h-5 w-5" />
                 <span className="font-label-md text-label-md font-semibold uppercase tracking-wide">
                   Lecturer Portal Access
                 </span>

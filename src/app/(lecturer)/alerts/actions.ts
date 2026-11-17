@@ -1,8 +1,8 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { getLecturer } from "@/lib/lecturer/session";
 
+import { revalidatePath } from "next/cache";
 export type AlertSeverityType = "high" | "medium" | "low";
 export type AlertKindType =
   | "fake_identity"
@@ -37,11 +37,7 @@ export async function getAllAlertsAction(filters?: {
   severity?: string;
   type?: string;
 }): Promise<AlertRow[]> {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { supabase, user } = await getLecturer();
 
   if (!user) return [];
 
@@ -166,11 +162,7 @@ export async function getAllAlertsAction(filters?: {
 
 /** Mark an alert as reviewed */
 export async function markAlertReviewedAction(alertId: string) {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { supabase, user } = await getLecturer();
 
   if (!user) return { error: "Unauthorized" };
 
@@ -187,11 +179,7 @@ export async function markAlertReviewedAction(alertId: string) {
 
 /** Dismiss an alert */
 export async function dismissAlertFromCentreAction(alertId: string) {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { supabase, user } = await getLecturer();
 
   if (!user) return { error: "Unauthorized" };
 
@@ -212,11 +200,7 @@ export async function markPresentFromAlertAction(
   sessionId: string,
   studentId: string
 ) {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { supabase, user } = await getLecturer();
 
   if (!user) return { error: "Unauthorized" };
 
@@ -244,11 +228,7 @@ export async function markPresentFromAlertAction(
 
 /** Get list of sessions for the session filter dropdown */
 export async function getLecturerSessionsForFilterAction() {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { supabase, user } = await getLecturer();
 
   if (!user) return [];
 
