@@ -981,13 +981,15 @@ export default function ReportsClientView({
                                       <AlertTriangle className="w-4 h-4 text-amber-600" />
                                     ) : null}
                                   </div>
-                                  <span
-                                    className={`font-caption text-caption block ${
-                                      isBarred ? "text-rose-700" : isAtRisk ? "text-amber-800" : "text-secondary"
-                                    }`}
-                                  >
-                                    {s.email}
-                                  </span>
+                                  {s.email && (
+                                    <span
+                                      className={`font-caption text-caption block ${
+                                        isBarred ? "text-rose-700" : isAtRisk ? "text-amber-800" : "text-secondary"
+                                      }`}
+                                    >
+                                      {s.email}
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                             </td>

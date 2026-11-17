@@ -78,7 +78,7 @@ export async function getClassReportDataAction(
       .order("starts_at", { ascending: true }),
     supabase
       .from("students")
-      .select("id, full_name, index_number")
+      .select("id, full_name, index_number, email, programme, level")
       .eq("class_id", classId)
       .order("full_name", { ascending: true }),
   ]);
@@ -104,8 +104,8 @@ export async function getClassReportDataAction(
         id: s.id,
         indexNumber: s.index_number,
         name: s.full_name,
-        email: `${s.index_number.toLowerCase()}@campus.edu`,
-        program: "BSc CS • L200",
+        email: s.email || "",
+        program: [s.programme, s.level].filter(Boolean).join(" • "),
         sessionsAttended: 0,
         totalSessions: totalSessionsHeld,
         attendanceRate: 0,
@@ -179,8 +179,8 @@ export async function getClassReportDataAction(
       id: s.id,
       indexNumber: s.index_number,
       name: s.full_name,
-      email: `${s.index_number.toLowerCase()}@campus.edu`,
-      program: "BSc CS • L200",
+      email: s.email || "",
+      program: [s.programme, s.level].filter(Boolean).join(" • "),
       sessionsAttended,
       totalSessions: totalSessionsHeld,
       attendanceRate,

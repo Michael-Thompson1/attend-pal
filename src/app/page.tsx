@@ -1,17 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import {
-  BadgeCheck,
   Bell,
   Camera,
   CheckCircle2,
-  ClipboardList,
   GraduationCap,
   KeyRound,
   MapPin,
   Plus,
   QrCode,
-  Radio,
   ScanFace,
   Shield,
   UserCheck,
@@ -213,10 +210,6 @@ export default function HomePage() {
                     Students must be physically present inside the designated lecture hall or room perimeter. Attempts from outside the authorized boundaries cannot complete verification.
                   </p>
                 </div>
-                <div className="mt-6 flex items-center gap-2 border-t border-outline-variant/20 pt-6 font-caption text-caption font-medium text-primary">
-                  <Radio className="h-4 w-4" />
-                  Sub-meter classroom boundary enforcement
-                </div>
               </article>
               <article className="flex flex-col justify-between rounded-2xl border border-outline-variant/40 bg-surface-container-lowest p-8 shadow-sm">
                 <div>
@@ -230,10 +223,6 @@ export default function HomePage() {
                     Live instant photo verification on the student&apos;s own device confirms real-time presence. The snapshot validates the student identity directly on their phone screen.
                   </p>
                 </div>
-                <div className="mt-6 flex items-center gap-2 border-t border-outline-variant/20 pt-6 font-caption text-caption font-medium text-primary">
-                  <BadgeCheck className="h-4 w-4" />
-                  Immediate student identity confirmation
-                </div>
               </article>
               <article className="flex flex-col justify-between rounded-2xl border border-outline-variant/40 bg-surface-container-lowest p-8 shadow-sm">
                 <div>
@@ -246,10 +235,6 @@ export default function HomePage() {
                   <p className="font-body-md text-body-md leading-relaxed text-secondary">
                     Out-of-bounds or suspicious check-in attempts are highlighted for the lecturer to review. Irregular signals are segregated automatically into a separate confirmation panel.
                   </p>
-                </div>
-                <div className="mt-6 flex items-center gap-2 border-t border-outline-variant/20 pt-6 font-caption text-caption font-medium text-primary">
-                  <ClipboardList className="h-4 w-4" />
-                  Full lecturer discretion and oversight
                 </div>
               </article>
             </div>
