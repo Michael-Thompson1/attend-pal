@@ -953,7 +953,11 @@ export default function SettingsClientView({ data }: { data: SettingsViewData })
                       How student photos are handled
                     </h2>
                     <p className="mt-1 max-w-2xl font-body-md text-body-md text-secondary">
-                      Attend Pal keeps only what a lecturer needs to review a problem.
+                      Attend Pal keeps only what a lecturer needs to review a problem.{" "}
+                      <Link href="/privacy" className="font-semibold text-primary hover:underline">
+                        Read the privacy policy
+                      </Link>
+                      .
                     </p>
                     <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-3">
                       <PrivacyCard

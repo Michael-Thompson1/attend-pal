@@ -4,7 +4,7 @@ import { MapPin, Smile, AlertTriangle } from "lucide-react";
 
 export function AuthSidePanel() {
   return (
-    <section className="relative flex flex-col justify-between overflow-hidden bg-primary-container p-8 text-on-primary lg:w-1/2 lg:p-16">
+    <section className="relative flex flex-col overflow-hidden bg-primary-container p-8 text-on-primary lg:w-1/2 lg:p-16">
       {/* Subtle ambient graphic pattern overlay */}
       <div className="pointer-events-none absolute inset-0 opacity-10">
         <svg className="h-full w-full" xmlns="http://www.w3.org/2000/svg">
@@ -31,8 +31,9 @@ export function AuthSidePanel() {
       {/* Subtle radial glow */}
       <div className="pointer-events-none absolute -left-24 -top-24 h-96 w-96 rounded-full bg-primary-fixed opacity-15 blur-3xl" />
 
+      <div className="relative z-10 flex flex-col gap-10">
       {/* Top Header & Brand Identity */}
-      <div className="relative z-10 space-y-6">
+      <div className="space-y-6">
         <div className="flex items-center space-x-3.5">
           <AttendMark className="h-12 w-12 rounded-xl shadow-md" iconClassName="h-7 w-7" tone="inverse" />
           <div>
@@ -52,7 +53,7 @@ export function AuthSidePanel() {
       </div>
 
       {/* Middle Value Anchor */}
-      <div className="relative z-10 max-w-xl space-y-8 py-10 lg:py-0">
+      <div className="max-w-xl space-y-8">
         <div className="space-y-3">
           <p className="font-label-lg text-label-lg font-semibold uppercase tracking-widest text-on-primary-container">
             Zero-Fraud Roll Call
@@ -112,6 +113,7 @@ export function AuthSidePanel() {
             </div>
           </div>
         </div>
+      </div>
       </div>
     </section>
   );

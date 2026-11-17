@@ -333,6 +333,9 @@ export default function HomePage() {
             </p>
           </div>
           <div className="flex items-center gap-4">
+            <Link href="/privacy" className="font-label-md text-label-md text-secondary hover:text-primary">
+              Privacy policy
+            </Link>
             <Link href="/login" className="font-label-md text-label-md text-secondary hover:text-primary">
               Lecturer log in
             </Link>

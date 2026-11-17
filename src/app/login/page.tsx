@@ -255,6 +255,12 @@ export default function LoginPage() {
               <ShieldCheck className="h-4 w-4 text-tertiary" />
               <span className="font-medium text-on-surface">Official Faculty Endpoint</span>
             </div>
+            <Link
+              href="/privacy"
+              className="font-caption text-caption text-primary underline underline-offset-2 hover:text-primary-container"
+            >
+              Privacy policy
+            </Link>
             <a
               href="#helpdesk"
               className="flex items-center space-x-1 font-caption text-caption text-primary underline underline-offset-2 hover:text-primary-container"

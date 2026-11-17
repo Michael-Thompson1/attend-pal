@@ -14,6 +14,7 @@ const PUBLIC_PATHS = [
   "/",
   "/login",
   "/register",
+  "/privacy",
   "/auth/callback",
   "/attend",
   "/api/attend",

@@ -419,7 +419,7 @@ export default function RegisterPage() {
                           Terms of Service
                         </a>{" "}
                         and{" "}
-                        <a href="#privacy" className="font-semibold text-primary hover:underline">
+                        <a href="/privacy" className="font-semibold text-primary hover:underline">
                           Privacy Policy
                         </a>
                         .

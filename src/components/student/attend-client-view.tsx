@@ -3,6 +3,7 @@
 import { AttendMark } from "@/components/brand/attend-mark";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import Link from "next/link";
 import LinkInactiveView from "@/components/student/link-inactive-view";
 import {
   AlreadyCheckedIn,
@@ -417,6 +418,9 @@ export default function AttendClientView({
               The check stops as soon as attendance is marked.
             </li>
           </ul>
+          <Link href="/privacy" className="mt-4 inline-flex min-h-11 items-center font-label-md text-label-md font-semibold text-primary">
+            Privacy policy
+          </Link>
         </Sheet>
       )}
     </main>
