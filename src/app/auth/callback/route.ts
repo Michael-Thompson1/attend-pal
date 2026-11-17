@@ -4,29 +4,32 @@
  * Exchanges the code for a session and redirects to the dashboard.
  */
 import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
+import { applyAuthHeaders, AUTH_COOKIE_OPTIONS, clearLegacyAuthCookies } from "@/lib/supabase/auth-cookie";
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
   const next = searchParams.get("next") ?? "/dashboard";
+  const successUrl = `${origin}${next.startsWith("/") ? next : "/dashboard"}`;
+  const response = NextResponse.redirect(successUrl);
+  clearLegacyAuthCookies(response, request.cookies.getAll());
 
   if (code) {
-    const cookieStore = await cookies();
-
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
+        cookieOptions: AUTH_COOKIE_OPTIONS,
         cookies: {
           getAll() {
-            return cookieStore.getAll();
+            return request.cookies.getAll();
           },
-          setAll(cookiesToSet) {
+          setAll(cookiesToSet, headers) {
             cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
+              response.cookies.set(name, value, options)
             );
+            applyAuthHeaders(response, headers);
           },
         },
       }
@@ -35,10 +38,9 @@ export async function GET(request: NextRequest) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
 
     if (!error) {
-      return NextResponse.redirect(`${origin}${next}`);
+      return response;
     }
   }
 
-  // Something went wrong — send to login with an error flag
   return NextResponse.redirect(`${origin}/login?error=auth_callback_failed`);
 }

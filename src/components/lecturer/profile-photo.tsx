@@ -8,6 +8,10 @@ const LecturerProfileContext = createContext<{ photoUrl: string | null; name: st
   name: "",
 });
 
+export function useLecturerProfile() {
+  return useContext(LecturerProfileContext);
+}
+
 export function LecturerProfileProvider({
   photoUrl,
   name,

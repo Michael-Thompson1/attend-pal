@@ -1,6 +1,6 @@
 "use client";
 
-import { ProfilePhoto } from "@/components/lecturer/profile-photo";
+import { ProfilePhoto, useLecturerProfile } from "@/components/lecturer/profile-photo";
 
 import { AttendMark } from "@/components/brand/attend-mark";
 
@@ -167,6 +167,7 @@ export default function AlertsClientView({
   initialAlerts,
   sessionOptions,
 }: AlertsClientViewProps) {
+  const { name: lecturerName } = useLecturerProfile();
   const isDemo = false;
   const alertSource = initialAlerts;
   const sessionSource = sessionOptions;
@@ -357,7 +358,7 @@ export default function AlertsClientView({
               <ProfilePhoto variant="icon" />
               <div className="flex flex-col text-left">
                 <span className="font-label-md text-label-md text-on-surface font-semibold leading-tight">
-                  Dr. Kwame Mensah
+                  {lecturerName || "Lecturer"}
                 </span>
                 <span className="font-caption text-caption text-secondary leading-tight">
                   Senior Lecturer

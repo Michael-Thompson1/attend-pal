@@ -1,6 +1,9 @@
 import { LecturerProfileProvider } from "@/components/lecturer/profile-photo";
 import { getLecturerPhotoUrl, getLecturerRecord } from "@/lib/lecturer/session";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default async function LecturerLayout({ children }: { children: React.ReactNode }) {
   const { user, profile } = await getLecturerRecord();
   const photoUrl = user ? await getLecturerPhotoUrl() : null;

@@ -1,6 +1,6 @@
 "use client";
 
-import { ProfilePhoto } from "@/components/lecturer/profile-photo";
+import { ProfilePhoto, useLecturerProfile } from "@/components/lecturer/profile-photo";
 
 import { AttendMark } from "@/components/brand/attend-mark";
 
@@ -72,6 +72,7 @@ export default function ReportsClientView({
   initialReportData = null,
   openAlertCount = 0,
 }: ReportsClientViewProps) {
+  const { name: lecturerName } = useLecturerProfile();
   const isDemo = false;
   const availableClasses = initialClasses;
 
@@ -301,7 +302,7 @@ export default function ReportsClientView({
               <ProfilePhoto variant="icon" />
               <div className="flex flex-col text-left">
                 <span className="font-label-md text-label-md text-on-surface font-semibold leading-tight">
-                  Dr. Kwame Mensah
+                  {lecturerName || "Lecturer"}
                 </span>
                 <span className="font-caption text-caption text-secondary leading-tight">
                   Senior Lecturer

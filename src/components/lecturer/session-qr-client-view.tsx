@@ -1,7 +1,7 @@
 "use client";
 
 import { AttendMark } from "@/components/brand/attend-mark";
-import { ProfilePhoto } from "@/components/lecturer/profile-photo";
+import { ProfilePhoto, useLecturerProfile } from "@/components/lecturer/profile-photo";
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -76,6 +76,7 @@ export default function SessionQRClientView({
   openAlertCount = 0,
 }: SessionQRClientViewProps) {
   const router = useRouter();
+  const { name: lecturerName } = useLecturerProfile();
   const [session, setSession] = useState(initialSession);
   const [liveQr, setLiveQr] = useState(qrDataUrl);
   const [copiedLink, setCopiedLink] = useState(false);
@@ -272,7 +273,7 @@ export default function SessionQRClientView({
               <ProfilePhoto variant="initial" />
               <div className="flex flex-col min-w-0">
                 <span className="font-label-md text-label-md font-semibold text-on-surface truncate">
-                  Michael Dev Test
+                  {lecturerName || "Lecturer"}
                 </span>
                 <span className="font-caption text-[11px] text-secondary truncate">
                   michael.thompson@stu.ucc.edu.gh
@@ -319,7 +320,7 @@ export default function SessionQRClientView({
               <ProfilePhoto variant="icon" />
               <div className="flex flex-col text-left">
                 <span className="font-label-md text-label-md text-on-surface font-semibold leading-tight">
-                  Michael Dev Test
+                  {lecturerName || "Lecturer"}
                 </span>
                 <span className="font-caption text-caption text-secondary leading-tight">
                   Senior Lecturer

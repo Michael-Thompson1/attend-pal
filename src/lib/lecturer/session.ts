@@ -1,7 +1,7 @@
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 
-/** Cookie session for page loads. Database rules still check the token. */
+/** Cookie session for page loads. Middleware already checked this token with Supabase. */
 export const getLecturer = cache(async () => {
   const supabase = await createClient();
   const {
