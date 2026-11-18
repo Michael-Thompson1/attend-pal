@@ -1,5 +1,6 @@
 "use server";
 
+import { fingerprintPath } from "@/lib/attend/reference-face";
 import { getLecturer } from "@/lib/lecturer/session";
 import { getAdminClient } from "@/lib/supabase/admin";
 import { revalidatePath } from "next/cache";
@@ -137,7 +138,7 @@ export async function deleteClassAction(classId: string) {
   if (photoPaths.length > 0) {
     try {
       const admin = getAdminClient();
-      await admin.storage.from("reference-photos").remove(photoPaths);
+      await admin.storage.from("reference-photos").remove([...photoPaths, ...photoPaths.map(fingerprintPath)]);
     } catch {
       // The class row is already gone. Leftover photo files can be removed later.
     }
@@ -176,7 +177,9 @@ export async function deleteStudentAction(studentId: string) {
   if (student.reference_photo_path) {
     try {
       const admin = getAdminClient();
-      await admin.storage.from("reference-photos").remove([student.reference_photo_path]);
+      await admin.storage
+        .from("reference-photos")
+        .remove([student.reference_photo_path, fingerprintPath(student.reference_photo_path)]);
     } catch {
       // The roster row is already gone. A leftover photo file can be removed later.
     }

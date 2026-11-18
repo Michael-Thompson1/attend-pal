@@ -352,15 +352,14 @@ export async function runAttendCheck(input: {
     return { code: "identity" };
   }
 
-  let reference: Buffer | null = null;
-  if (student.reference_photo_path) {
-    const downloaded = await admin.storage.from("reference-photos").download(student.reference_photo_path);
-    if (downloaded.data) reference = Buffer.from(await downloaded.data.arrayBuffer());
-  }
-
   let scored: Awaited<ReturnType<typeof import("@/lib/attend/face-score").scoreCheckInFaces>>;
   try {
     const { scoreCheckInFaces } = await import("@/lib/attend/face-score");
+    const { loadReferenceDescriptor } = await import("@/lib/attend/reference-face");
+    // The roster photo's saved face fingerprint, so its slow face search is skipped.
+    const reference = student.reference_photo_path
+      ? await loadReferenceDescriptor(admin, student.reference_photo_path)
+      : null;
     scored = await scoreCheckInFaces(frames, reference, session.require_liveness !== false);
   } catch (error) {
     console.error("Face check could not run", error);
