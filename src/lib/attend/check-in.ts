@@ -362,7 +362,8 @@ export async function runAttendCheck(input: {
   try {
     const { scoreCheckInFaces } = await import("@/lib/attend/face-score");
     scored = await scoreCheckInFaces(frames, reference, session.require_liveness !== false);
-  } catch {
+  } catch (error) {
+    console.error("Face check could not run", error);
     await admin.from("attempts").insert({
       session_id: session.id,
       ip_hash: ipHash,

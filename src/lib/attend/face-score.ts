@@ -28,14 +28,22 @@ export type FaceScore = {
   reason: "ok" | "no_reference" | "no_face" | "low_liveness" | "low_match" | "mismatch";
 };
 
-type Landmarks = { getLeftEye: () => Point[]; getRightEye: () => Point[] };
 type Point = { x: number; y: number };
-type FaceHit = { descriptor: Float32Array; landmarks: Landmarks; detection: { box: { width: number; height: number } } };
+type Box = { x: number; y: number; width: number; height: number };
+type Tensor = { dispose: () => void; shape: number[] };
+type Landmarks = {
+  getLeftEye: () => Point[];
+  getRightEye: () => Point[];
+  shiftBy: (x: number, y: number) => Landmarks;
+  align: (detection: null, options: { useDlibAlignment: boolean }) => Box;
+};
+type FaceHit = { descriptor: Float32Array; landmarks: Landmarks; detection: { box: Box } };
 
 let models: Promise<{
   detect: (tensor: unknown) => Promise<FaceHit[]>;
-  tensor: (data: Uint8Array, shape: [number, number, number]) => { dispose: () => void; shape: number[] };
-  resize: (tensor: { dispose: () => void; shape: number[] }, size: [number, number]) => { dispose: () => void; shape: number[] };
+  readAt: (tensor: Tensor, box: Box) => Promise<{ landmarks: Landmarks; descriptor: Float32Array }>;
+  tensor: (data: Uint8Array, shape: [number, number, number]) => Tensor;
+  resize: (tensor: Tensor, size: [number, number]) => Tensor;
 }> | null = null;
 
 type FaceRuntime = {
@@ -64,9 +72,16 @@ type FaceRuntime = {
   };
   nets: {
     ssdMobilenetv1: { loadFromDisk: (dir: string) => Promise<void> };
-    faceLandmark68Net: { loadFromDisk: (dir: string) => Promise<void> };
-    faceRecognitionNet: { loadFromDisk: (dir: string) => Promise<void> };
+    faceLandmark68Net: {
+      loadFromDisk: (dir: string) => Promise<void>;
+      detectLandmarks: (face: Tensor) => Promise<Landmarks>;
+    };
+    faceRecognitionNet: {
+      loadFromDisk: (dir: string) => Promise<void>;
+      computeFaceDescriptor: (face: Tensor) => Promise<Float32Array>;
+    };
   };
+  extractFaceTensors: (image: Tensor, boxes: Box[]) => Promise<Tensor[]>;
   SsdMobilenetv1Options: new (options?: { minConfidence?: number; maxResults?: number }) => unknown;
   detectAllFaces: (
     tensor: unknown,
@@ -100,6 +115,25 @@ function loadModels() {
       return {
         detect: (tensor: unknown) =>
           faceapi.detectAllFaces(tensor, options).withFaceLandmarks().withFaceDescriptors(),
+        // Same steps as withFaceLandmarks().withFaceDescriptors(), but on a face box
+        // that is already known, so the slow face search is skipped.
+        readAt: async (tensor: Tensor, box: Box) => {
+          const [face] = await faceapi.extractFaceTensors(tensor, [box]);
+          let landmarks: Landmarks;
+          try {
+            landmarks = (await faceapi.nets.faceLandmark68Net.detectLandmarks(face)).shiftBy(box.x, box.y);
+          } finally {
+            face.dispose();
+          }
+          const [aligned] = await faceapi.extractFaceTensors(tensor, [
+            landmarks.align(null, { useDlibAlignment: true }),
+          ]);
+          try {
+            return { landmarks, descriptor: await faceapi.nets.faceRecognitionNet.computeFaceDescriptor(aligned) };
+          } finally {
+            aligned.dispose();
+          }
+        },
         tensor: (data: Uint8Array, shape: [number, number, number]) => tf.tensor3d(data, shape, "int32"),
         resize: (tensor: { dispose: () => void; shape: number[] }, size: [number, number]) =>
           tf.image.resizeBilinear(tensor, size, false),
@@ -217,7 +251,18 @@ function orientedRgba(data: Uint8Array, width: number, height: number, orientati
   return { data: out, width: outWidth, height: outHeight };
 }
 
-async function readFace(bytes: Buffer, engine: Awaited<ReturnType<typeof loadModels>>) {
+type FaceRead = { aspect: number; descriptor: Float32Array; box: Box; width: number; height: number };
+
+/**
+ * Reads one face from a JPEG. Without `at`, it runs the full (slow) face search.
+ * With `at`, it reuses a face box found on another frame of the same capture,
+ * which skips the search and costs a small fraction of the time.
+ */
+async function readFace(
+  bytes: Buffer,
+  engine: Awaited<ReturnType<typeof loadModels>>,
+  at?: FaceRead,
+): Promise<FaceRead | null> {
   const decoded = decodeJpeg(bytes, { useTArray: true, formatAsRGBA: true });
   const upright = orientedRgba(decoded.data, decoded.width, decoded.height, jpegOrientation(bytes));
   const rgb = new Uint8Array(upright.width * upright.height * 3);
@@ -235,12 +280,21 @@ async function readFace(bytes: Buffer, engine: Awaited<ReturnType<typeof loadMod
     tensor.dispose();
     tensor = resized;
   }
+  const [height, width] = tensor.shape;
+  const aspectOf = (landmarks: Landmarks) =>
+    (eyeAspect(landmarks.getLeftEye()) + eyeAspect(landmarks.getRightEye())) / 2;
   try {
+    if (at) {
+      if (at.width !== width || at.height !== height) return null;
+      const face = await engine.readAt(tensor, at.box);
+      return { aspect: aspectOf(face.landmarks), descriptor: face.descriptor, box: at.box, width, height };
+    }
     const faces = await engine.detect(tensor);
     if (faces.length === 0) return null;
     const face = largest(faces);
-    const aspect = (eyeAspect(face.landmarks.getLeftEye()) + eyeAspect(face.landmarks.getRightEye())) / 2;
-    return { aspect, descriptor: face.descriptor };
+    return { aspect: aspectOf(face.landmarks), descriptor: face.descriptor, box: face.detection.box, width, height };
+  } catch {
+    return null;
   } finally {
     tensor.dispose();
   }
@@ -252,11 +306,26 @@ export async function scoreCheckInFaces(
   requireLiveness = true,
 ): Promise<FaceScore> {
   const engine = await loadModels();
-  // Score every frame: a blink is short, and dropping frames can miss it.
+  // The face search is the slow step (seconds per frame on the server CPU), so
+  // it runs on one anchor frame, trying at most two. The face barely moves in
+  // the ~1 s capture, so every other frame reuses the anchor's face box. Every
+  // frame is still read: a blink is short, and dropping frames can miss it.
+  const order = [Math.floor(frames.length / 2), 0].filter((index, at, all) => all.indexOf(index) === at);
+  let anchor: FaceRead | null = null;
+  let anchorIndex = -1;
+  for (const index of order) {
+    anchor = await readFace(frames[index], engine);
+    if (anchor) {
+      anchorIndex = index;
+      break;
+    }
+  }
   const seen: Array<{ aspect: number; descriptor: Float32Array; bytes: Buffer }> = [];
-  for (const frame of frames) {
-    const face = await readFace(frame, engine);
-    if (face) seen.push({ ...face, bytes: frame });
+  if (anchor) {
+    for (let index = 0; index < frames.length; index += 1) {
+      const face = index === anchorIndex ? anchor : await readFace(frames[index], engine, anchor);
+      if (face) seen.push({ aspect: face.aspect, descriptor: face.descriptor, bytes: frames[index] });
+    }
   }
   if (seen.length === 0) {
     return {
