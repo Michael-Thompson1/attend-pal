@@ -7,10 +7,15 @@ import { createRequire } from "module";
  * 50% or higher is marked present.
  * 40–49% is sent to the lecturer.
  * Under 40% is rejected.
+ * Liveness needs a visible blink across the frames, so a still photo or a
+ * picture on another screen cannot pass when the session requires it.
+ * Every frame must show the same person.
  */
 export const LIVENESS_PASS = 0.15;
 export const MATCH_PASS = 0.5;
 export const MATCH_REVIEW = 0.4;
+/** Two frames further apart than this are treated as different people. */
+export const SAME_PERSON_DISTANCE = 0.6;
 
 export type FaceDecision = "verified" | "review" | "reject" | "unscored";
 
@@ -18,6 +23,7 @@ export type FaceScore = {
   decision: FaceDecision;
   liveness: number;
   match: number | null;
+  livenessPassed: boolean;
   evidence: Buffer | null;
   reason: "ok" | "no_reference" | "no_face" | "low_liveness" | "low_match" | "mismatch";
 };
@@ -240,44 +246,73 @@ async function readFace(bytes: Buffer, engine: Awaited<ReturnType<typeof loadMod
   }
 }
 
-export async function scoreCheckInFaces(frames: Buffer[], reference: Buffer | null): Promise<FaceScore> {
+export async function scoreCheckInFaces(
+  frames: Buffer[],
+  reference: Buffer | null,
+  requireLiveness = true,
+): Promise<FaceScore> {
   const engine = await loadModels();
-  const sample = frames.length > 3 ? [frames[0], frames[Math.floor(frames.length / 2)], frames[frames.length - 1]] : frames;
+  // Score every frame: a blink is short, and dropping frames can miss it.
   const seen: Array<{ aspect: number; descriptor: Float32Array; bytes: Buffer }> = [];
-  for (const frame of sample) {
+  for (const frame of frames) {
     const face = await readFace(frame, engine);
     if (face) seen.push({ ...face, bytes: frame });
   }
   if (seen.length === 0) {
-    return { decision: "reject", liveness: 0, match: null, evidence: frames[0] ?? null, reason: "no_face" };
+    return {
+      decision: "reject",
+      liveness: 0,
+      match: null,
+      livenessPassed: false,
+      evidence: frames[0] ?? null,
+      reason: "no_face",
+    };
   }
 
   const open = Math.max(...seen.map((face) => face.aspect));
   const closed = Math.min(...seen.map((face) => face.aspect));
   const liveness = seen.length < 2 ? 0 : Math.max(0, Math.min(1, (open - closed) / 0.14));
+  const livenessPassed = liveness >= LIVENESS_PASS;
   const clearest = seen.reduce((best, face) => (face.aspect > best.aspect ? face : best));
 
+  // Every frame must show the same person, so one good frame of the student
+  // cannot carry frames of somebody else.
+  for (let left = 0; left < seen.length; left += 1) {
+    for (let right = left + 1; right < seen.length; right += 1) {
+      if (descriptorDistance(seen[left].descriptor, seen[right].descriptor) > SAME_PERSON_DISTANCE) {
+        return { decision: "reject", liveness, match: null, livenessPassed, evidence: clearest.bytes, reason: "mismatch" };
+      }
+    }
+  }
+
+  // A still photo, or a picture shown on another screen, never blinks.
+  if (requireLiveness && !livenessPassed) {
+    return { decision: "reject", liveness, match: null, livenessPassed, evidence: clearest.bytes, reason: "low_liveness" };
+  }
+
   if (!reference) {
-    return { decision: "review", liveness, match: null, evidence: clearest.bytes, reason: "no_reference" };
+    return { decision: "review", liveness, match: null, livenessPassed, evidence: clearest.bytes, reason: "no_reference" };
   }
 
   const roster = await readFace(reference, engine);
   if (!roster) {
-    return { decision: "review", liveness, match: null, evidence: clearest.bytes, reason: "no_reference" };
+    return { decision: "review", liveness, match: null, livenessPassed, evidence: clearest.bytes, reason: "no_reference" };
   }
 
+  // Safe to take the best frame: every frame was checked to be the same person.
   const match = Math.max(...seen.map((face) => similarity(descriptorDistance(face.descriptor, roster.descriptor))));
 
   if (match >= MATCH_PASS) {
-    return { decision: "verified", liveness, match, evidence: null, reason: "ok" };
+    return { decision: "verified", liveness, match, livenessPassed, evidence: null, reason: "ok" };
   }
   if (match >= MATCH_REVIEW) {
-    return { decision: "review", liveness, match, evidence: clearest.bytes, reason: "low_match" };
+    return { decision: "review", liveness, match, livenessPassed, evidence: clearest.bytes, reason: "low_match" };
   }
   return {
     decision: "reject",
     liveness,
     match,
+    livenessPassed,
     evidence: clearest.bytes,
     reason: "mismatch",
   };

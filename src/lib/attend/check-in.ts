@@ -39,6 +39,7 @@ type SessionRow = {
   center_lng: number;
   radius_m: number;
   allow_second_checkin: boolean;
+  require_liveness: boolean;
   second_checkin_window_minutes: number;
 };
 
@@ -119,7 +120,7 @@ async function loadSession(token: string) {
   const { data, error } = await admin
     .from("sessions")
     .select(
-      "id, class_id, lecturer_id, title, status, starts_at, ends_at, venue_name, center_lat, center_lng, radius_m, allow_second_checkin, second_checkin_window_minutes",
+      "id, class_id, lecturer_id, title, status, starts_at, ends_at, venue_name, center_lat, center_lng, radius_m, allow_second_checkin, second_checkin_window_minutes, require_liveness",
     )
     .eq("token", token)
     .maybeSingle();
@@ -360,7 +361,7 @@ export async function runAttendCheck(input: {
   let scored: Awaited<ReturnType<typeof import("@/lib/attend/face-score").scoreCheckInFaces>>;
   try {
     const { scoreCheckInFaces } = await import("@/lib/attend/face-score");
-    scored = await scoreCheckInFaces(frames, reference);
+    scored = await scoreCheckInFaces(frames, reference, session.require_liveness !== false);
   } catch {
     await admin.from("attempts").insert({
       session_id: session.id,
@@ -382,7 +383,7 @@ export async function runAttendCheck(input: {
       distance_m: distance,
       gps_accuracy_m: input.accuracy,
       match_score: scored.match,
-      liveness_passed: true,
+      liveness_passed: scored.livenessPassed,
       device_hash: deviceHash,
     });
     if (error) return { code: "already" };

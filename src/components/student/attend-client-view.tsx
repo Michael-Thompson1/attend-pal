@@ -1046,7 +1046,8 @@ function SelfieCapture({
           context.drawImage(video, 0, 0, canvas.width, canvas.height);
           shots.current = [...shots.current, canvas.toDataURL("image/jpeg", 0.7)].slice(-5);
           if (shots.current.length >= 3) setReady(true);
-        }, 150);
+          // 5 frames, 250 ms apart: about 1.25 s, long enough to catch a blink.
+        }, 250);
       } catch {
         if (!stopped) setBlocked(true);
       }
