@@ -326,13 +326,21 @@ export async function referenceFingerprint(photo: Buffer): Promise<ReferenceFing
   return { descriptor: Array.from(face.descriptor), faceWidth: Math.round(face.box.width), faces: face.faces };
 }
 
-/**
- * Scores the check-in frames. `reference` is the roster photo's saved face
- * fingerprint (see reference-face.ts), or null when there is none.
- */
+/** The roster photo to compare against. */
+export type ReferenceSource = {
+  /** Loads the roster photo's saved face fingerprint (built-in model), or null when there is none. */
+  descriptor: () => Promise<Float32Array | null>;
+  /**
+   * Optional outside comparison (AWS Rekognition). Returns similarity 0-1, or
+   * null to fall back to the built-in model. Uses its own pass/review levels.
+   */
+  remote?: { compare: (selfie: Buffer) => Promise<number | null>; pass: number; review: number };
+};
+
+/** Scores the check-in frames against the roster photo (null when the student has none). */
 export async function scoreCheckInFaces(
   frames: Buffer[],
-  reference: Float32Array | null,
+  reference: ReferenceSource | null,
   requireLiveness = true,
 ): Promise<FaceScore> {
   const engine = await loadModels();
@@ -393,18 +401,33 @@ export async function scoreCheckInFaces(
     return { decision: "review", liveness, match: null, livenessPassed, evidence: clearest.bytes, reason: "no_reference" };
   }
 
-  const roster = { descriptor: reference };
-  if (roster.descriptor.length !== 128) {
-    return { decision: "review", liveness, match: null, livenessPassed, evidence: clearest.bytes, reason: "no_reference" };
+  let match: number | null = null;
+  let pass = MATCH_PASS;
+  let review = MATCH_REVIEW;
+
+  // Outside comparison first, when it is set up. The clearest (eyes most open)
+  // frame is sent; every frame was already checked to be the same person.
+  if (reference.remote) {
+    match = await reference.remote.compare(clearest.bytes);
+    pass = reference.remote.pass;
+    review = reference.remote.review;
   }
 
-  // Safe to take the best frame: every frame was checked to be the same person.
-  const match = Math.max(...seen.map((face) => similarity(descriptorDistance(face.descriptor, roster.descriptor))));
+  if (match === null) {
+    pass = MATCH_PASS;
+    review = MATCH_REVIEW;
+    const roster = await reference.descriptor();
+    if (!roster || roster.length !== 128) {
+      return { decision: "review", liveness, match: null, livenessPassed, evidence: clearest.bytes, reason: "no_reference" };
+    }
+    // Safe to take the best frame: every frame was checked to be the same person.
+    match = Math.max(...seen.map((face) => similarity(descriptorDistance(face.descriptor, roster))));
+  }
 
-  if (match >= MATCH_PASS) {
+  if (match >= pass) {
     return { decision: "verified", liveness, match, livenessPassed, evidence: null, reason: "ok" };
   }
-  if (match >= MATCH_REVIEW) {
+  if (match >= review) {
     return { decision: "review", liveness, match, livenessPassed, evidence: clearest.bytes, reason: "low_match" };
   }
   return {
