@@ -14,6 +14,11 @@ const nextConfig: NextConfig = {
       "./node_modules/@vladmandic/face-api/model/face_landmark_68_model*",
       "./node_modules/@vladmandic/face-api/model/face_recognition_model*",
     ],
+    "/api/classes/check-photos": [
+      "./node_modules/@vladmandic/face-api/model/ssd_mobilenetv1_model*",
+      "./node_modules/@vladmandic/face-api/model/face_landmark_68_model*",
+      "./node_modules/@vladmandic/face-api/model/face_recognition_model*",
+    ],
   },
   serverExternalPackages: [
     "@tensorflow/tfjs",

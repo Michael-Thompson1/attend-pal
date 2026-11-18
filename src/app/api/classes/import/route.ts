@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 import { getLecturer } from "@/lib/lecturer/session";
 import { getAdminClient } from "@/lib/supabase/admin";
+import { fingerprintPath } from "@/lib/attend/reference-face";
 import { indexKey, pairPhotos, parseRosterCsv, type RosterPhoto } from "@/lib/roster/match";
 
 export const runtime = "nodejs";
@@ -92,6 +93,13 @@ export async function POST(request: Request) {
       }
       photoPaths.set(key, path);
     }
+    // A replaced photo needs a fresh face fingerprint; the photo check saves it.
+    if (photoPaths.size > 0) {
+      await admin.storage
+        .from("reference-photos")
+        .remove([...photoPaths.values()].map(fingerprintPath))
+        .catch(() => undefined);
+    }
   }
 
   const withPhoto = parsed.rows.filter((row) => photoPaths.has(row.key));
@@ -114,6 +122,8 @@ export async function POST(request: Request) {
     rejectedPhotos: rejectedPhotos.slice(0, 20),
     photoErrors,
     skipped: parsed.skipped.slice(0, 20),
+    // The dialog sends these to /api/classes/check-photos in small batches.
+    photoKeys: [...photoPaths.keys()],
   });
 }
 

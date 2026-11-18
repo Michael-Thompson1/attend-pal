@@ -16,6 +16,8 @@ export const MATCH_PASS = 0.5;
 export const MATCH_REVIEW = 0.4;
 /** Two frames further apart than this are treated as different people. */
 export const SAME_PERSON_DISTANCE = 0.6;
+/** A reference face narrower than this (in pixels) is too small to match reliably. */
+export const MIN_REFERENCE_FACE_PX = 100;
 
 export type FaceDecision = "verified" | "review" | "reject" | "unscored";
 
@@ -251,7 +253,7 @@ function orientedRgba(data: Uint8Array, width: number, height: number, orientati
   return { data: out, width: outWidth, height: outHeight };
 }
 
-type FaceRead = { aspect: number; descriptor: Float32Array; box: Box; width: number; height: number };
+type FaceRead = { aspect: number; descriptor: Float32Array; box: Box; width: number; height: number; faces: number };
 
 /**
  * Reads one face from a JPEG. Without `at`, it runs the full (slow) face search.
@@ -287,12 +289,19 @@ async function readFace(
     if (at) {
       if (at.width !== width || at.height !== height) return null;
       const face = await engine.readAt(tensor, at.box);
-      return { aspect: aspectOf(face.landmarks), descriptor: face.descriptor, box: at.box, width, height };
+      return { aspect: aspectOf(face.landmarks), descriptor: face.descriptor, box: at.box, width, height, faces: 1 };
     }
     const faces = await engine.detect(tensor);
     if (faces.length === 0) return null;
     const face = largest(faces);
-    return { aspect: aspectOf(face.landmarks), descriptor: face.descriptor, box: face.detection.box, width, height };
+    return {
+      aspect: aspectOf(face.landmarks),
+      descriptor: face.descriptor,
+      box: face.detection.box,
+      width,
+      height,
+      faces: faces.length,
+    };
   } catch {
     return null;
   } finally {
@@ -300,9 +309,38 @@ async function readFace(
   }
 }
 
+export type ReferenceFingerprint = {
+  /** 128-number face fingerprint, or null when no face was found. */
+  descriptor: number[] | null;
+  /** Width of the face box in pixels, after large photos are scaled to 800 px. */
+  faceWidth: number;
+  /** How many faces the photo contains (up to 2 are counted). */
+  faces: number;
+};
+
+/** Reads the face fingerprint of a roster (reference) photo. */
+export async function referenceFingerprint(photo: Buffer): Promise<ReferenceFingerprint> {
+  const engine = await loadModels();
+  const face = await readFace(photo, engine);
+  if (!face) return { descriptor: null, faceWidth: 0, faces: 0 };
+  return { descriptor: Array.from(face.descriptor), faceWidth: Math.round(face.box.width), faces: face.faces };
+}
+
+/** The roster photo to compare against. */
+export type ReferenceSource = {
+  /** Loads the roster photo's saved face fingerprint (built-in model), or null when there is none. */
+  descriptor: () => Promise<Float32Array | null>;
+  /**
+   * Optional outside comparison (AWS Rekognition). Returns similarity 0-1, or
+   * null to fall back to the built-in model. Uses its own pass/review levels.
+   */
+  remote?: { compare: (selfie: Buffer) => Promise<number | null>; pass: number; review: number };
+};
+
+/** Scores the check-in frames against the roster photo (null when the student has none). */
 export async function scoreCheckInFaces(
   frames: Buffer[],
-  reference: Buffer | null,
+  reference: ReferenceSource | null,
   requireLiveness = true,
 ): Promise<FaceScore> {
   const engine = await loadModels();
@@ -363,18 +401,33 @@ export async function scoreCheckInFaces(
     return { decision: "review", liveness, match: null, livenessPassed, evidence: clearest.bytes, reason: "no_reference" };
   }
 
-  const roster = await readFace(reference, engine);
-  if (!roster) {
-    return { decision: "review", liveness, match: null, livenessPassed, evidence: clearest.bytes, reason: "no_reference" };
+  let match: number | null = null;
+  let pass = MATCH_PASS;
+  let review = MATCH_REVIEW;
+
+  // Outside comparison first, when it is set up. The clearest (eyes most open)
+  // frame is sent; every frame was already checked to be the same person.
+  if (reference.remote) {
+    match = await reference.remote.compare(clearest.bytes);
+    pass = reference.remote.pass;
+    review = reference.remote.review;
   }
 
-  // Safe to take the best frame: every frame was checked to be the same person.
-  const match = Math.max(...seen.map((face) => similarity(descriptorDistance(face.descriptor, roster.descriptor))));
+  if (match === null) {
+    pass = MATCH_PASS;
+    review = MATCH_REVIEW;
+    const roster = await reference.descriptor();
+    if (!roster || roster.length !== 128) {
+      return { decision: "review", liveness, match: null, livenessPassed, evidence: clearest.bytes, reason: "no_reference" };
+    }
+    // Safe to take the best frame: every frame was checked to be the same person.
+    match = Math.max(...seen.map((face) => similarity(descriptorDistance(face.descriptor, roster))));
+  }
 
-  if (match >= MATCH_PASS) {
+  if (match >= pass) {
     return { decision: "verified", liveness, match, livenessPassed, evidence: null, reason: "ok" };
   }
-  if (match >= MATCH_REVIEW) {
+  if (match >= review) {
     return { decision: "review", liveness, match, livenessPassed, evidence: clearest.bytes, reason: "low_match" };
   }
   return {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowRight, Check, CloudUpload, Download, X } from "lucide-react";
 
 type ImportResult = {
@@ -12,6 +12,21 @@ type ImportResult = {
   rejectedPhotos: string[];
   photoErrors: string[];
   skipped: { indexNumber: string; reason: string }[];
+  photoKeys?: string[];
+};
+
+type PhotoStatus = "ok" | "no_face" | "small_face" | "several_faces" | "missing";
+type PhotoProblem = { indexNumber: string; status: PhotoStatus };
+type PhotoCheck = { done: number; total: number; problems: PhotoProblem[]; error: string | null };
+
+/** Photos checked per request; each takes a few seconds on the server. */
+const PHOTO_CHECK_BATCH = 2;
+
+const PHOTO_PROBLEM: Record<Exclude<PhotoStatus, "ok">, string> = {
+  no_face: "No face found. Use a clear, front-facing passport photo.",
+  small_face: "Face is too small. Use a larger or sharper scan of the passport photo.",
+  several_faces: "More than one face. Crop the photo to this student only.",
+  missing: "The photo could not be read from storage. Import it again.",
 };
 
 export function ClassImportDialog({
@@ -30,6 +45,43 @@ export function ClassImportDialog({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
+  const [photoCheck, setPhotoCheck] = useState<PhotoCheck | null>(null);
+  const closed = useRef(false);
+
+  useEffect(() => {
+    closed.current = false;
+    return () => {
+      closed.current = true;
+    };
+  }, []);
+
+  /** Checks each imported photo for a usable face and saves its face fingerprint. */
+  async function checkPhotos(keys: string[]) {
+    const state: PhotoCheck = { done: 0, total: keys.length, problems: [], error: null };
+    setPhotoCheck({ ...state });
+    for (let start = 0; start < keys.length && !closed.current; start += PHOTO_CHECK_BATCH) {
+      const batch = keys.slice(start, start + PHOTO_CHECK_BATCH);
+      try {
+        const response = await fetch("/api/classes/check-photos", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ classId, keys: batch }),
+        });
+        const data = (await response.json()) as { results?: PhotoProblem[]; error?: string };
+        if (!response.ok || !data.results) {
+          state.error = data.error || "The photo check stopped early.";
+          break;
+        }
+        state.problems.push(...data.results.filter((row) => row.status !== "ok"));
+      } catch {
+        state.error = "The photo check stopped early.";
+        break;
+      }
+      state.done = Math.min(keys.length, start + batch.length);
+      if (!closed.current) setPhotoCheck({ ...state, problems: [...state.problems] });
+    }
+    if (!closed.current) setPhotoCheck({ ...state, problems: [...state.problems] });
+  }
 
   async function submit() {
     if (!csv) {
@@ -38,6 +90,7 @@ export function ClassImportDialog({
     }
     setPending(true);
     setError(null);
+    setPhotoCheck(null);
     const form = new FormData();
     form.set("classId", classId);
     form.set("csv", csv);
@@ -51,6 +104,7 @@ export function ClassImportDialog({
       }
       setResult(data);
       await onImported();
+      if (data.photoKeys?.length) await checkPhotos(data.photoKeys);
     } catch {
       setError("The class list could not be imported.");
     } finally {
@@ -171,6 +225,8 @@ export function ClassImportDialog({
               )}
             </div>
           )}
+
+          {photoCheck && <PhotoCheckPanel check={photoCheck} />}
         </div>
 
         <div className="flex items-center justify-end gap-3 border-t border-surface-container-high bg-surface-container-low px-6 py-4 sm:px-8">
@@ -183,7 +239,13 @@ export function ClassImportDialog({
             disabled={pending || !csv}
             className="inline-flex h-11 items-center gap-2 rounded-xl bg-primary-container px-5 font-label-lg text-label-md font-semibold text-on-primary disabled:opacity-50"
           >
-            {pending ? "Saving..." : result ? "Import again" : "Import class list"}
+            {pending
+              ? photoCheck && photoCheck.done < photoCheck.total && !photoCheck.error
+                ? `Checking photos ${photoCheck.done}/${photoCheck.total}...`
+                : "Saving..."
+              : result
+                ? "Import again"
+                : "Import class list"}
             {result ? <Check className="h-4 w-4" /> : <ArrowRight className="h-4 w-4" />}
           </button>
         </div>
@@ -197,6 +259,50 @@ function ResultCard({ label, value }: { label: string; value: number }) {
     <div className="rounded-xl border border-surface-container-high bg-surface-container-low p-4">
       <p className="font-title-lg text-title-lg font-bold text-on-surface">{value}</p>
       <p className="font-caption text-caption text-secondary">{label}</p>
+    </div>
+  );
+}
+
+function PhotoCheckPanel({ check }: { check: PhotoCheck }) {
+  const finished = check.done >= check.total || check.error !== null;
+  return (
+    <div className="rounded-xl border border-surface-container-high bg-surface-container-low p-4">
+      <p className="font-label-md text-label-md font-semibold text-on-surface">
+        {finished ? "Photo check" : `Checking photos for a clear face: ${check.done} of ${check.total}`}
+      </p>
+      {!finished && (
+        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-container-high">
+          <div
+            className="h-full rounded-full bg-primary-container transition-all"
+            style={{ width: `${check.total ? Math.round((check.done / check.total) * 100) : 0}%` }}
+          />
+        </div>
+      )}
+      {finished && check.problems.length === 0 && !check.error && (
+        <p className="mt-1 font-caption text-caption text-secondary">
+          All {check.total} photos show one clear face and are ready for check-in.
+        </p>
+      )}
+      {check.problems.length > 0 && (
+        <div className="mt-2 flex flex-col gap-1">
+          <p className="font-caption text-caption text-on-surface">
+            Replace these photos and import again. Until then, these students&apos; check-ins may fail or come to you for review.
+          </p>
+          <ul className="flex flex-col gap-1">
+            {check.problems.map((problem) => (
+              <li key={problem.indexNumber} className="font-caption text-caption text-error">
+                <span className="font-semibold">{problem.indexNumber}</span>:{" "}
+                {PHOTO_PROBLEM[problem.status as Exclude<PhotoStatus, "ok">]}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {check.error && (
+        <p className="mt-1 font-caption text-caption text-error">
+          {check.error} Checked {check.done} of {check.total}. The rest are checked at each student&apos;s first check-in.
+        </p>
+      )}
     </div>
   );
 }
