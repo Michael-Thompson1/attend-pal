@@ -19,7 +19,6 @@ const PUBLIC_PATHS = [
   "/attend",
   "/api/attend",
   "/api/version",
-  "/api/face-selftest",
 ];
 
 function isPublic(pathname: string) {

@@ -21,7 +21,6 @@ const nextConfig: NextConfig = {
     "/api/classes/check-photos": FACE_MODEL_WEIGHTS,
     "/api/classes/import": FACE_MODEL_WEIGHTS,
     "/classes": FACE_MODEL_WEIGHTS,
-    "/api/face-selftest": FACE_MODEL_WEIGHTS,
   },
   serverExternalPackages: [
     "@tensorflow/tfjs",
