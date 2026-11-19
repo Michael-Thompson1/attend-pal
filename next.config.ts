@@ -27,7 +27,6 @@ const nextConfig: NextConfig = {
     "@tensorflow/tfjs",
     "@tensorflow/tfjs-backend-cpu",
     "@tensorflow/tfjs-core",
-    "@vladmandic/face-api",
     "jpeg-js",
   ],
 };
