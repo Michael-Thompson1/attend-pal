@@ -209,7 +209,7 @@ export async function markPresentFromAlertAction(
     student_id: studentId,
     status: "manual",
     manual_reason: "Manually marked present by lecturer from Alerts Centre",
-    match_score: 100,
+    match_score: 1,
     distance_m: 0,
     checkin_number: 1,
   });

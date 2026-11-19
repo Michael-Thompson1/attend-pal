@@ -356,25 +356,9 @@ export async function runAttendCheck(input: {
   try {
     const { scoreCheckInFaces } = await import("@/lib/attend/face-score");
     const { loadReferenceDescriptor } = await import("@/lib/attend/reference-face");
-    const rekognition = await import("@/lib/attend/rekognition");
-    const photoPath = student.reference_photo_path;
-    const reference = photoPath
-      ? {
-          // The roster photo's saved face fingerprint, so its slow face search is skipped.
-          descriptor: () => loadReferenceDescriptor(admin, photoPath),
-          // AWS Rekognition, only when its keys are set; otherwise the built-in model decides.
-          remote: rekognition.rekognitionConfigured()
-            ? {
-                compare: async (selfie: Buffer) => {
-                  const photo = await admin.storage.from("reference-photos").download(photoPath);
-                  if (!photo.data) return null;
-                  return rekognition.compareWithRekognition(selfie, Buffer.from(await photo.data.arrayBuffer()));
-                },
-                pass: rekognition.REKOGNITION_PASS,
-                review: rekognition.REKOGNITION_REVIEW,
-              }
-            : undefined,
-        }
+    // The roster photo's saved face fingerprint, so its slow face search is skipped.
+    const reference = student.reference_photo_path
+      ? await loadReferenceDescriptor(admin, student.reference_photo_path)
       : null;
     scored = await scoreCheckInFaces(frames, reference, session.require_liveness !== false);
   } catch (error) {

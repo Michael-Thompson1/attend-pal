@@ -234,7 +234,7 @@ export async function manualAttendanceOverrideAction(formData: FormData) {
       student_id: studentId,
       status: "manual",
       manual_reason: fullReason,
-      match_score: 100,
+      match_score: 1,
       distance_m: 0,
       checkin_number: 1,
     });

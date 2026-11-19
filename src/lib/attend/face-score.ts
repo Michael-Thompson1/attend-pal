@@ -1,6 +1,5 @@
 import { decode as decodeJpeg } from "jpeg-js";
 import path from "path";
-import { createRequire } from "module";
 
 /**
  * Likeness uses the roster photo and the SSD face model.
@@ -108,8 +107,9 @@ function loadModels() {
       const tf = faceapi.tf;
       if (tf.getBackend() !== "cpu") await tf.setBackend("cpu");
       await tf.ready();
-      const require = createRequire(path.join(process.cwd(), "package.json"));
-      const modelDir = path.join(path.dirname(require.resolve("@vladmandic/face-api/package.json")), "model");
+      // Keep this as a static path. A dynamic createRequire() argument is
+      // transformed to undefined by webpack, which crashes every face check.
+      const modelDir = path.join(process.cwd(), "node_modules", "@vladmandic", "face-api", "model");
       await faceapi.nets.ssdMobilenetv1.loadFromDisk(modelDir);
       await faceapi.nets.faceLandmark68Net.loadFromDisk(modelDir);
       await faceapi.nets.faceRecognitionNet.loadFromDisk(modelDir);
@@ -326,21 +326,13 @@ export async function referenceFingerprint(photo: Buffer): Promise<ReferenceFing
   return { descriptor: Array.from(face.descriptor), faceWidth: Math.round(face.box.width), faces: face.faces };
 }
 
-/** The roster photo to compare against. */
-export type ReferenceSource = {
-  /** Loads the roster photo's saved face fingerprint (built-in model), or null when there is none. */
-  descriptor: () => Promise<Float32Array | null>;
-  /**
-   * Optional outside comparison (AWS Rekognition). Returns similarity 0-1, or
-   * null to fall back to the built-in model. Uses its own pass/review levels.
-   */
-  remote?: { compare: (selfie: Buffer) => Promise<number | null>; pass: number; review: number };
-};
-
-/** Scores the check-in frames against the roster photo (null when the student has none). */
+/**
+ * Scores the check-in frames. `reference` is the roster photo's saved face
+ * fingerprint (see reference-face.ts), or null when there is none.
+ */
 export async function scoreCheckInFaces(
   frames: Buffer[],
-  reference: ReferenceSource | null,
+  reference: Float32Array | null,
   requireLiveness = true,
 ): Promise<FaceScore> {
   const engine = await loadModels();
@@ -401,33 +393,18 @@ export async function scoreCheckInFaces(
     return { decision: "review", liveness, match: null, livenessPassed, evidence: clearest.bytes, reason: "no_reference" };
   }
 
-  let match: number | null = null;
-  let pass = MATCH_PASS;
-  let review = MATCH_REVIEW;
-
-  // Outside comparison first, when it is set up. The clearest (eyes most open)
-  // frame is sent; every frame was already checked to be the same person.
-  if (reference.remote) {
-    match = await reference.remote.compare(clearest.bytes);
-    pass = reference.remote.pass;
-    review = reference.remote.review;
+  const roster = { descriptor: reference };
+  if (roster.descriptor.length !== 128) {
+    return { decision: "review", liveness, match: null, livenessPassed, evidence: clearest.bytes, reason: "no_reference" };
   }
 
-  if (match === null) {
-    pass = MATCH_PASS;
-    review = MATCH_REVIEW;
-    const roster = await reference.descriptor();
-    if (!roster || roster.length !== 128) {
-      return { decision: "review", liveness, match: null, livenessPassed, evidence: clearest.bytes, reason: "no_reference" };
-    }
-    // Safe to take the best frame: every frame was checked to be the same person.
-    match = Math.max(...seen.map((face) => similarity(descriptorDistance(face.descriptor, roster))));
-  }
+  // Safe to take the best frame: every frame was checked to be the same person.
+  const match = Math.max(...seen.map((face) => similarity(descriptorDistance(face.descriptor, roster.descriptor))));
 
-  if (match >= pass) {
+  if (match >= MATCH_PASS) {
     return { decision: "verified", liveness, match, livenessPassed, evidence: null, reason: "ok" };
   }
-  if (match >= review) {
+  if (match >= MATCH_REVIEW) {
     return { decision: "review", liveness, match, livenessPassed, evidence: clearest.bytes, reason: "low_match" };
   }
   return {
