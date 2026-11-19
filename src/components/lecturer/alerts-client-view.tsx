@@ -61,28 +61,74 @@ interface AlertsClientViewProps {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function typeLabel(type: string): string {
+function parseDetails(details: string | null): Record<string, unknown> {
+  if (!details) return {};
+  try {
+    const value = JSON.parse(details);
+    return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function detailReason(alert: AlertRow): string | null {
+  const reason = parseDetails(alert.details).reason;
+  return typeof reason === "string" ? reason : null;
+}
+
+const REASON_TEXT: Record<string, string> = {
+  unscored: "The face model could not score this check-in. Review the student and mark them present if they are in class.",
+  no_frames: "The selfie capture was incomplete, so the face could not be checked. Review the student and mark them present if they are in class.",
+  no_face: "No face was found in the selfie.",
+  no_reference: "There is no usable roster photo for this student.",
+  low_liveness: "The blink check did not pass, so the selfie may not be live.",
+  low_match: "The selfie was a partial match to the roster photo.",
+  mismatch: "The selfie did not match the roster photo.",
+};
+
+function typeLabel(alert: AlertRow): string {
+  const reason = detailReason(alert);
   const labels: Record<string, string> = {
-    fake_identity: "Fake identity attempt",
+    low_match: "Low match — review",
     out_of_bounds: "Out of bounds",
-    device_reuse: "Device fingerprint reuse",
-    liveness_fail: "Liveness challenge fail",
+    multi_index_device: "Multiple indices on one device",
     window_cutoff: "Window cutoff",
   };
-  return labels[type] ?? type;
+  if (alert.type === "fake_identity") {
+    if (reason === "unscored") return "Face check unavailable";
+    if (reason === "no_frames") return "Selfie capture incomplete";
+    if (reason === "low_liveness") return "Liveness check failed";
+    if (reason === "no_face") return "No face detected";
+    if (reason === "no_reference") return "No roster photo";
+    if (reason === "mismatch") return "Face mismatch";
+    return "Face verification failed";
+  }
+  return labels[alert.type] ?? alert.type;
+}
+
+function detailSummary(alert: AlertRow): string {
+  const reason = detailReason(alert);
+  if (reason && REASON_TEXT[reason]) return REASON_TEXT[reason];
+  if (alert.type === "fake_identity" || alert.type === "low_match") {
+    return "The student's face could not be verified. Review the student and mark them present if they are in class.";
+  }
+  return "Anomaly flagged during automated check-in verification.";
 }
 
 function keyMetricLabel(alert: AlertRow): string {
-  if (alert.match_score !== null && alert.type === "fake_identity") {
-    return `${alert.match_score}% Match`;
-  }
+  if (alert.match_score !== null) return `${alert.match_score}% Match`;
+  const reason = detailReason(alert);
+  if (reason === "unscored") return "Model unavailable";
+  if (reason === "no_frames") return "Capture incomplete";
+  if (reason === "no_face") return "No face";
+  if (reason === "no_reference") return "No roster photo";
+  if (reason === "low_liveness") return "Liveness fail";
   if (alert.distance_m !== null && alert.type === "out_of_bounds") {
-    return `${alert.distance_m} m away`;
+    return `${Math.round(alert.distance_m)} m away`;
   }
-  if (alert.type === "device_reuse") return "Multi-acct / device";
-  if (alert.type === "liveness_fail") return "Liveness fail";
+  if (alert.type === "multi_index_device") return "Multi-acct / device";
   if (alert.type === "window_cutoff") return "Late check-in";
-  return alert.details ?? "—";
+  return "—";
 }
 
 function timeAgo(isoString: string): string {
@@ -151,9 +197,10 @@ function StatusBadge({ status }: { status: string }) {
 
 const FILTER_CHIPS = [
   { key: "all", label: "All Alerts" },
-  { key: "fake_identity", label: "Fake identity" },
+  { key: "fake_identity", label: "Face check failed" },
+  { key: "low_match", label: "Low match" },
   { key: "out_of_bounds", label: "Out of bounds" },
-  { key: "device_reuse", label: "Multiple indices on one device" },
+  { key: "multi_index_device", label: "Multiple indices on one device" },
   { key: "window_cutoff", label: "Window cutoff" },
 ];
 
@@ -448,8 +495,9 @@ export default function AlertsClientView({
                   }`}
                 >
                   {chip.key === "fake_identity" && <AlertTriangle className="w-4 h-4 text-error" />}
+                  {chip.key === "low_match" && <Camera className="w-4 h-4 text-secondary" />}
                   {chip.key === "out_of_bounds" && <MapPinOff className="w-4 h-4 text-secondary" />}
-                  {chip.key === "device_reuse" && <Smartphone className="w-4 h-4 text-error" />}
+                  {chip.key === "multi_index_device" && <Smartphone className="w-4 h-4 text-error" />}
                   {chip.key === "window_cutoff" && <Clock className="w-4 h-4 text-secondary" />}
                   <span>{chip.label}</span>
                   <span
@@ -588,7 +636,7 @@ export default function AlertsClientView({
                                       : "text-on-surface"
                                   }`}
                                 >
-                                  {typeLabel(secAlert.type)}
+                                  {typeLabel(secAlert)}
                                 </span>
                                 <div className="flex items-center gap-1 font-caption text-caption text-secondary mt-0.5">
                                   <span className="font-semibold text-on-surface">
@@ -704,7 +752,7 @@ export default function AlertsClientView({
                         </span>
                       </div>
                       <h2 className="font-headline-sm text-headline-sm text-on-surface font-bold tracking-tight">
-                        Incident Review: {typeLabel(selectedAlert.type)}
+                        Incident Review: {typeLabel(selectedAlert)}
                       </h2>
                       <p className="font-caption text-caption text-secondary mt-0.5">
                         {selectedAlert.student_name} · {selectedAlert.session_code} · {selectedAlert.venue_name}
@@ -728,18 +776,17 @@ export default function AlertsClientView({
                       <AlertTriangle className="text-error w-6 h-6 shrink-0 mt-0.5" />
                       <div className="flex flex-col text-sm leading-snug">
                         <span className="font-title-md text-title-md font-bold text-on-error-container">
-                          {typeLabel(selectedAlert.type)}
+                          {typeLabel(selectedAlert)}
                         </span>
                         <p className="font-caption text-caption mt-1 text-on-error-container/90">
-                          {selectedAlert.details ??
-                            "Anomaly flagged during automated check-in verification."}
+                          {detailSummary(selectedAlert)}
                         </p>
                       </div>
                     </div>
 
                     {/* Biometric section only for identity/liveness alerts */}
                     {(selectedAlert.type === "fake_identity" ||
-                      selectedAlert.type === "liveness_fail") && (
+                      selectedAlert.type === "low_match") && (
                       <div className="flex flex-col gap-space-sm">
                         <div className="flex items-center justify-between">
                           <span className="font-title-md text-title-md text-on-surface font-semibold">
@@ -867,12 +914,21 @@ export default function AlertsClientView({
                                 <span className="font-label-md text-label-md font-semibold text-on-surface">
                                   Location &amp; Geofence
                                 </span>
-                                <span className="px-2 py-0.5 rounded-full bg-error-container text-on-error-container font-caption text-caption font-semibold">
-                                  Out of bounds
+                                <span
+                                  className={`px-2 py-0.5 rounded-full font-caption text-caption font-semibold ${
+                                    selectedAlert.type === "out_of_bounds"
+                                      ? "bg-error-container text-on-error-container"
+                                      : "bg-surface-container-high text-on-surface-variant"
+                                  }`}
+                                >
+                                  {selectedAlert.type === "out_of_bounds" ? "Out of bounds" : "Inside geofence"}
                                 </span>
                               </div>
                               <p className="font-caption text-caption text-secondary mt-1">
-                                {selectedAlert.distance_m} m from beacon • Outside geofence radius
+                                {selectedAlert.distance_m} m from beacon •{" "}
+                                {selectedAlert.type === "out_of_bounds"
+                                  ? "Outside geofence radius"
+                                  : "Inside the session radius"}
                               </p>
                             </div>
                           </div>

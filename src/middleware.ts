@@ -18,6 +18,7 @@ const PUBLIC_PATHS = [
   "/auth/callback",
   "/attend",
   "/api/attend",
+  "/api/version",
 ];
 
 function isPublic(pathname: string) {

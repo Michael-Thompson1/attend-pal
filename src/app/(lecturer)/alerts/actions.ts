@@ -204,15 +204,18 @@ export async function markPresentFromAlertAction(
 
   if (!user) return { error: "Unauthorized" };
 
-  const { error: attErr } = await supabase.from("attendance").upsert({
-    session_id: sessionId,
-    student_id: studentId,
-    status: "manual",
-    manual_reason: "Manually marked present by lecturer from Alerts Centre",
-    match_score: 1,
-    distance_m: 0,
-    checkin_number: 1,
-  });
+  const { error: attErr } = await supabase.from("attendance").upsert(
+    {
+      session_id: sessionId,
+      student_id: studentId,
+      status: "manual",
+      manual_reason: "Manually marked present by lecturer from Alerts Centre",
+      match_score: 1,
+      distance_m: 0,
+      checkin_number: 1,
+    },
+    { onConflict: "session_id,student_id,checkin_number" },
+  );
 
   if (attErr) return { error: attErr.message };
 

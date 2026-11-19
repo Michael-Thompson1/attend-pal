@@ -1,5 +1,6 @@
 import { createHash } from "crypto";
 import { getAdminClient } from "@/lib/supabase/admin";
+import type { Json } from "@/lib/supabase/types";
 import type { AttendSession } from "@/components/student/attend-client-view";
 
 export type AttendResult = {
@@ -113,6 +114,67 @@ function windowCode(session: SessionRow, now: Date): AttendCode | null {
   if (session.status === "closed" || now.getTime() > new Date(session.ends_at).getTime()) return "closed";
   if (now.getTime() < new Date(session.starts_at).getTime()) return "not_open";
   return null;
+}
+
+type FaceAlert = {
+  sessionId: string;
+  studentId: string;
+  indexNumber: string;
+  type: "fake_identity" | "low_match";
+  severity: "high" | "medium";
+  distance: number;
+  matchScore: number | null;
+  deviceHash: string | null;
+  ipHash: string | null;
+  details: Json;
+  evidence: Buffer | null;
+};
+
+/**
+ * Raises the lecturer's alert for a failed face check. This runs only after the
+ * GPS check passed, so every alert is for a student inside the session radius.
+ * One open alert per student and session is enough: the lecturer reviews the
+ * student once and either marks them present or dismisses it. A failure after
+ * that opens a fresh alert.
+ */
+async function raiseFaceAlert(admin: ReturnType<typeof getAdminClient>, input: FaceAlert) {
+  const { data: open } = await admin
+    .from("alerts")
+    .select("id")
+    .eq("session_id", input.sessionId)
+    .eq("student_id", input.studentId)
+    .in("type", ["fake_identity", "low_match"])
+    .eq("status", "new")
+    .limit(1)
+    .maybeSingle();
+  if (open) return;
+
+  const { data: alert } = await admin
+    .from("alerts")
+    .insert({
+      session_id: input.sessionId,
+      type: input.type,
+      severity: input.severity,
+      claimed_index: input.indexNumber,
+      student_id: input.studentId,
+      distance_m: Math.round(input.distance),
+      match_score: input.matchScore,
+      device_hash: input.deviceHash,
+      ip_hash: input.ipHash,
+      details: input.details,
+    })
+    .select("id")
+    .single();
+
+  if (!alert || !input.evidence) return;
+  const evidencePath = `${input.sessionId}/${alert.id}.jpg`;
+  const uploaded = await admin.storage.from("alert-evidence").upload(evidencePath, input.evidence, {
+    contentType: "image/jpeg",
+    upsert: false,
+  });
+  if (!uploaded.error) {
+    await admin.from("alerts").update({ evidence_photo_path: evidencePath }).eq("id", alert.id);
+  }
 }
 
 async function loadSession(token: string) {
@@ -342,6 +404,19 @@ export async function runAttendCheck(input: {
     return frame ? [frame] : [];
   });
   if (frames.length < 3) {
+    await raiseFaceAlert(admin, {
+      sessionId: session.id,
+      studentId: student.id,
+      indexNumber: student.index_number,
+      type: "fake_identity",
+      severity: "medium",
+      distance,
+      matchScore: null,
+      deviceHash,
+      ipHash,
+      details: { reason: "no_frames", frames: frames.length },
+      evidence: frames[0] ?? null,
+    });
     await admin.from("attempts").insert({
       session_id: session.id,
       ip_hash: ipHash,
@@ -363,6 +438,30 @@ export async function runAttendCheck(input: {
     scored = await scoreCheckInFaces(frames, reference, session.require_liveness !== false);
   } catch (error) {
     console.error("Face check could not run", error);
+    let diagnostics: unknown = null;
+    try {
+      const faceScore = await import("@/lib/attend/face-score");
+      diagnostics = faceScore.faceModelDiagnostics();
+    } catch {
+      diagnostics = null;
+    }
+    await raiseFaceAlert(admin, {
+      sessionId: session.id,
+      studentId: student.id,
+      indexNumber: student.index_number,
+      type: "fake_identity",
+      severity: "medium",
+      distance,
+      matchScore: null,
+      deviceHash,
+      ipHash,
+      details: {
+        reason: "unscored",
+        error: error instanceof Error ? error.message : String(error),
+        diagnostics: diagnostics as Json,
+      },
+      evidence: frames[0] ?? null,
+    });
     await admin.from("attempts").insert({
       session_id: session.id,
       ip_hash: ipHash,
@@ -398,33 +497,22 @@ export async function runAttendCheck(input: {
   }
 
   const review = scored.decision === "review";
-  const { data: alert } = await admin
-    .from("alerts")
-    .insert({
-      session_id: session.id,
-      type: review ? "low_match" : "fake_identity",
-      severity: review ? "medium" : "high",
-      claimed_index: student.index_number,
-      student_id: student.id,
-      distance_m: distance,
-      match_score: scored.match,
-      device_hash: deviceHash,
-      ip_hash: ipHash,
-      details: { reason: scored.reason, liveness: Number(scored.liveness.toFixed(3)) },
-    })
-    .select("id")
-    .single();
-
-  if (alert && scored.evidence) {
-    const evidencePath = `${session.id}/${alert.id}.jpg`;
-    const uploaded = await admin.storage.from("alert-evidence").upload(evidencePath, scored.evidence, {
-      contentType: "image/jpeg",
-      upsert: false,
-    });
-    if (!uploaded.error) {
-      await admin.from("alerts").update({ evidence_photo_path: evidencePath }).eq("id", alert.id);
-    }
-  }
+  await raiseFaceAlert(admin, {
+    sessionId: session.id,
+    studentId: student.id,
+    indexNumber: student.index_number,
+    type: review ? "low_match" : "fake_identity",
+    severity: review ? "medium" : "high",
+    distance,
+    matchScore: scored.match,
+    deviceHash,
+    ipHash,
+    details: {
+      reason: scored.reason,
+      liveness: Number(scored.liveness.toFixed(3)),
+    },
+    evidence: scored.evidence,
+  });
 
   await admin.from("attempts").insert({
     session_id: session.id,

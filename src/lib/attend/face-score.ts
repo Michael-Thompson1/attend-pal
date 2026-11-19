@@ -1,4 +1,5 @@
 import { decode as decodeJpeg } from "jpeg-js";
+import { existsSync } from "node:fs";
 import path from "path";
 
 /**
@@ -90,6 +91,52 @@ type FaceRuntime = {
   ) => { withFaceLandmarks: () => { withFaceDescriptors: () => Promise<FaceHit[]> } };
 };
 
+/** File that must exist in a directory before it can be used as the model folder. */
+const MODEL_MARKER = "ssd_mobilenetv1_model-weights_manifest.json";
+
+/**
+ * The model weights live in the package's `model` folder. Check the usual
+ * locations under the working directory and the Lambda task root, walking up a
+ * few levels, and let the loader below decide which one actually works.
+ */
+function modelDirCandidates(): string[] {
+  const dirs: string[] = [];
+  const override = process.env.FACE_MODEL_DIR?.trim();
+  if (override) dirs.push(override);
+
+  const roots = new Set<string>([process.cwd()]);
+  const taskRoot = process.env.LAMBDA_TASK_ROOT?.trim();
+  if (taskRoot) roots.add(taskRoot);
+
+  for (const root of roots) {
+    let current = root;
+    for (let depth = 0; depth < 4; depth += 1) {
+      dirs.push(path.join(current, "node_modules", "@vladmandic", "face-api", "model"));
+      const parent = path.dirname(current);
+      if (parent === current) break;
+      current = parent;
+    }
+  }
+  return [...new Set(dirs)];
+}
+
+/** What the face model looked for, so a failed check can say why. */
+export function faceModelDiagnostics() {
+  return {
+    cwd: process.cwd(),
+    candidates: modelDirCandidates().map((dir) => ({
+      dir,
+      hasWeights: existsSync(path.join(dir, MODEL_MARKER)),
+    })),
+  };
+}
+
+async function loadModelsFrom(faceapi: FaceRuntime, dir: string) {
+  await faceapi.nets.ssdMobilenetv1.loadFromDisk(dir);
+  await faceapi.nets.faceLandmark68Net.loadFromDisk(dir);
+  await faceapi.nets.faceRecognitionNet.loadFromDisk(dir);
+}
+
 function loadModels() {
   if (!models) {
     models = (async () => {
@@ -107,45 +154,55 @@ function loadModels() {
       const tf = faceapi.tf;
       if (tf.getBackend() !== "cpu") await tf.setBackend("cpu");
       await tf.ready();
-      // Keep this as a static path. A dynamic createRequire() argument is
-      // transformed to undefined by webpack, which crashes every face check.
-      const modelDir = path.join(process.cwd(), "node_modules", "@vladmandic", "face-api", "model");
-      await faceapi.nets.ssdMobilenetv1.loadFromDisk(modelDir);
-      await faceapi.nets.faceLandmark68Net.loadFromDisk(modelDir);
-      await faceapi.nets.faceRecognitionNet.loadFromDisk(modelDir);
-      const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.25, maxResults: 2 });
-      return {
-        detect: (tensor: unknown) =>
-          faceapi.detectAllFaces(tensor, options).withFaceLandmarks().withFaceDescriptors(),
-        // Same steps as withFaceLandmarks().withFaceDescriptors(), but on a face box
-        // that is already known, so the slow face search is skipped.
-        readAt: async (tensor: Tensor, box: Box) => {
-          const [face] = await faceapi.extractFaceTensors(tensor, [box]);
-          let landmarks: Landmarks;
-          try {
-            landmarks = (await faceapi.nets.faceLandmark68Net.detectLandmarks(face)).shiftBy(box.x, box.y);
-          } finally {
-            face.dispose();
-          }
-          const [aligned] = await faceapi.extractFaceTensors(tensor, [
-            landmarks.align(null, { useDlibAlignment: true }),
-          ]);
-          try {
-            return { landmarks, descriptor: await faceapi.nets.faceRecognitionNet.computeFaceDescriptor(aligned) };
-          } finally {
-            aligned.dispose();
-          }
-        },
-        tensor: (data: Uint8Array, shape: [number, number, number]) => tf.tensor3d(data, shape, "int32"),
-        resize: (tensor: { dispose: () => void; shape: number[] }, size: [number, number]) =>
-          tf.image.resizeBilinear(tensor, size, false),
-      };
+      const tried: string[] = [];
+      for (const dir of modelDirCandidates()) {
+        try {
+          await loadModelsFrom(faceapi, dir);
+          console.info("Face models loaded from", dir);
+          return finishModels(faceapi);
+        } catch (error) {
+          tried.push(`${dir} (${error instanceof Error ? error.message : String(error)})`);
+        }
+      }
+      throw new Error(`Face model weights could not be loaded. Tried: ${tried.join(" | ")}`);
     })().catch((error) => {
+      // Let the next check-in retry instead of caching a broken loader.
       models = null;
       throw error;
     });
   }
   return models;
+}
+
+function finishModels(faceapi: FaceRuntime) {
+  const tf = faceapi.tf;
+  const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.25, maxResults: 2 });
+  return {
+    detect: (tensor: unknown) =>
+      faceapi.detectAllFaces(tensor, options).withFaceLandmarks().withFaceDescriptors(),
+    // Same steps as withFaceLandmarks().withFaceDescriptors(), but on a face box
+    // that is already known, so the slow face search is skipped.
+    readAt: async (tensor: Tensor, box: Box) => {
+      const [face] = await faceapi.extractFaceTensors(tensor, [box]);
+      let landmarks: Landmarks;
+      try {
+        landmarks = (await faceapi.nets.faceLandmark68Net.detectLandmarks(face)).shiftBy(box.x, box.y);
+      } finally {
+        face.dispose();
+      }
+      const [aligned] = await faceapi.extractFaceTensors(tensor, [
+        landmarks.align(null, { useDlibAlignment: true }),
+      ]);
+      try {
+        return { landmarks, descriptor: await faceapi.nets.faceRecognitionNet.computeFaceDescriptor(aligned) };
+      } finally {
+        aligned.dispose();
+      }
+    },
+    tensor: (data: Uint8Array, shape: [number, number, number]) => tf.tensor3d(data, shape, "int32"),
+    resize: (tensor: { dispose: () => void; shape: number[] }, size: [number, number]) =>
+      tf.image.resizeBilinear(tensor, size, false),
+  };
 }
 
 function eyeAspect(eye: Point[]) {

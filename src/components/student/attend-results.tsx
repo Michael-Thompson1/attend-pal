@@ -601,7 +601,7 @@ export function IdentityCheckFailed({
             </div>
           </div>
           <span className="inline-flex items-center gap-1 rounded-full bg-error-container px-2 py-1 font-caption text-caption font-semibold text-on-error-container">
-            Mismatch
+            Not verified
           </span>
         </div>
       </section>
@@ -625,9 +625,10 @@ export function IdentityCheckFailed({
           <TriangleAlert className="h-[18px] w-[18px]" />
         </div>
         <div>
-          <p className="font-label-md text-label-md font-semibold">Escalation notice</p>
+          <p className="font-label-md text-label-md font-semibold">Show this screen to your lecturer</p>
           <p className="mt-0.5 font-caption text-caption leading-snug text-on-surface-variant">
-            Your lecturer may be notified of repeated failed attempts. A third consecutive failure locks digital check-in for this period.
+            Your lecturer now has an alert for this failed check-in and can mark you present if you are in class. If the
+            camera cannot verify you, keep this screen open instead of retrying.
           </p>
         </div>
       </div>

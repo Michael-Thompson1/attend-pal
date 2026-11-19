@@ -229,15 +229,18 @@ export async function manualAttendanceOverrideAction(formData: FormData) {
 
   const { error } = await supabase
     .from("attendance")
-    .upsert({
-      session_id: sessionId,
-      student_id: studentId,
-      status: "manual",
-      manual_reason: fullReason,
-      match_score: 1,
-      distance_m: 0,
-      checkin_number: 1,
-    });
+    .upsert(
+      {
+        session_id: sessionId,
+        student_id: studentId,
+        status: "manual",
+        manual_reason: fullReason,
+        match_score: 1,
+        distance_m: 0,
+        checkin_number: 1,
+      },
+      { onConflict: "session_id,student_id,checkin_number" },
+    );
 
   if (error) return { error: error.message };
 
